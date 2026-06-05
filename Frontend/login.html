@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TalentBridge — Welcome</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#080910; --surface:#111318; --surface2:#181b22; --surface3:#1e2129;
+      --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.13);
+      --text:#eeeae2; --muted:rgba(238,234,226,0.48); --muted2:rgba(238,234,226,0.24);
+      --gold:#e8c27a; --gold2:rgba(232,194,122,0.14); --gold3:rgba(232,194,122,0.07);
+      --green:#7ae8a0; --green2:rgba(122,232,160,0.12);
+      --blue:#7ab8e8; --blue2:rgba(122,184,232,0.12);
+      --red:#e87a7a; --red2:rgba(232,122,122,0.1);
+      --font-d:'Fraunces',serif; --font-b:'Instrument Sans',sans-serif;
+    }
+    html,body { height:100%; font-family:var(--font-b); background:var(--bg); color:var(--text); overflow:hidden; }
+
+    .page { display:flex; height:100vh; overflow:hidden; }
+
+    /* LEFT PANEL */
+    .left-panel {
+      width:52%; background:var(--surface); border-right:1px solid var(--border);
+      display:flex; flex-direction:column; justify-content:center; padding:60px 56px;
+      position:relative; overflow:hidden;
+    }
+    .left-panel::before {
+      content:''; position:absolute; top:-120px; left:-120px; width:500px; height:500px;
+      border-radius:50%; background:radial-gradient(circle,rgba(232,194,122,.07),transparent 65%); pointer-events:none;
+    }
+    .left-panel::after {
+      content:''; position:absolute; bottom:-80px; right:-80px; width:360px; height:360px;
+      border-radius:50%; background:radial-gradient(circle,rgba(122,184,232,.05),transparent 65%); pointer-events:none;
+    }
+    .brand { margin-bottom:44px; }
+    .brand-logo { font-family:var(--font-d); font-size:1.55rem; font-weight:700; letter-spacing:-.02em; }
+    .brand-logo em { color:var(--gold); font-style:italic; }
+    .brand-tagline { font-size:.74rem; color:var(--muted); margin-top:4px; letter-spacing:.08em; text-transform:uppercase; }
+    .left-heading { font-family:var(--font-d); font-size:2.5rem; font-weight:700; letter-spacing:-.04em; line-height:1.15; margin-bottom:16px; }
+    .left-heading em { color:var(--gold); font-style:italic; }
+    .left-sub { font-size:.88rem; color:var(--muted); line-height:1.65; max-width:380px; margin-bottom:40px; }
+    .feature-list { display:flex; flex-direction:column; gap:13px; }
+    .feature-item { display:flex; align-items:center; gap:12px; font-size:.81rem; color:var(--muted); }
+    .feature-icon { width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:1rem; flex-shrink:0; }
+    .fi-gold { background:var(--gold2); border:1px solid rgba(232,194,122,.18); }
+    .fi-blue { background:var(--blue2); border:1px solid rgba(122,184,232,.18); }
+    .fi-green { background:var(--green2); border:1px solid rgba(122,232,160,.18); }
+    .feat-label { font-weight:600; color:var(--text); margin-bottom:1px; }
+
+    /* RIGHT PANEL */
+    .right-panel { flex:1; display:flex; align-items:center; justify-content:center; padding:32px 44px; overflow-y:auto; background:var(--bg); }
+    .auth-box { width:100%; max-width:420px; animation:fadeUp .45s cubic-bezier(.22,1,.36,1); }
+
+    /* ROLE SELECTOR */
+    .role-selector { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px; }
+    .role-card {
+      padding:15px 12px; border-radius:14px; border:1.5px solid var(--border);
+      background:var(--surface); cursor:pointer; transition:all .2s; text-align:center; position:relative; overflow:hidden;
+    }
+    .role-card:hover { border-color:var(--border2); transform:translateY(-1px); }
+    .role-card.active.recruiter { border-color:rgba(232,194,122,.5); background:var(--gold3); box-shadow:0 0 0 1px rgba(232,194,122,.15); }
+    .role-card.active.seeker   { border-color:rgba(122,184,232,.5); background:var(--blue2);  box-shadow:0 0 0 1px rgba(122,184,232,.15); }
+    .role-emoji { font-size:1.5rem; margin-bottom:5px; display:block; }
+    .role-label { font-size:.79rem; font-weight:600; color:var(--muted); transition:color .2s; }
+    .role-card.active .role-label { color:var(--text); }
+    .role-desc { font-size:.65rem; color:var(--muted2); margin-top:2px; line-height:1.35; }
+    .role-card.active.recruiter .role-desc { color:rgba(232,194,122,.65); }
+    .role-card.active.seeker   .role-desc { color:rgba(122,184,232,.65); }
+    .role-check { position:absolute; top:7px; right:7px; width:17px; height:17px; border-radius:50%; font-size:.62rem; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .2s; }
+    .role-card.active.recruiter .role-check { background:var(--gold); color:#080910; opacity:1; }
+    .role-card.active.seeker   .role-check { background:var(--blue); color:#080910; opacity:1; }
+
+    /* TABS */
+    .tab-switcher { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px; margin-bottom:20px; }
+    .tab-btn { flex:1; padding:8px; border:none; border-radius:7px; background:transparent; color:var(--muted); font-family:var(--font-b); font-size:.79rem; font-weight:600; cursor:pointer; transition:all .18s; }
+    .tab-btn.active { background:var(--surface3); color:var(--text); border:1px solid var(--border2); }
+
+    /* FORMS */
+    .form-section { display:none; }
+    .form-section.visible { display:block; }
+    .field { margin-bottom:12px; }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    label { display:block; font-size:.68rem; font-weight:600; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px; }
+    input, select {
+      width:100%; padding:10px 13px; border-radius:10px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-family:var(--font-b); font-size:.86rem;
+      outline:none; transition:border-color .2s,box-shadow .2s; appearance:none;
+    }
+    input:focus, select:focus { border-color:rgba(232,194,122,.45); box-shadow:0 0 0 3px rgba(232,194,122,.07); }
+    select option { background:var(--surface2); }
+    input::placeholder { color:var(--muted2); }
+
+    /* COMPANY SECTION for register */
+    .company-mode-toggle { display:flex; gap:6px; margin-bottom:12px; }
+    .cmt-btn { flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-family:var(--font-b); font-size:.74rem; font-weight:600; cursor:pointer; transition:all .18s; text-align:center; }
+    .cmt-btn.active { background:var(--gold2); color:var(--gold); border-color:rgba(232,194,122,.3); }
+    .company-panel { display:none; }
+    .company-panel.visible { display:block; }
+
+    /* Company search dropdown */
+    .company-search-wrap { position:relative; }
+    .company-dropdown {
+      position:absolute; top:100%; left:0; right:0; background:var(--surface2); border:1px solid var(--border2);
+      border-radius:10px; z-index:100; max-height:180px; overflow-y:auto; margin-top:4px;
+      box-shadow:0 12px 32px rgba(0,0,0,.5); display:none;
+    }
+    .company-dropdown.open { display:block; }
+    .co-item { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); }
+    .co-item:last-child { border-bottom:none; }
+    .co-item:hover { background:rgba(255,255,255,.04); }
+    .co-logo { font-size:1.1rem; }
+    .co-name { font-size:.82rem; font-weight:600; }
+    .co-meta { font-size:.68rem; color:var(--muted); margin-top:1px; }
+    .co-empty { padding:14px; font-size:.78rem; color:var(--muted2); text-align:center; }
+
+    /* MESSAGES */
+    .error-box { background:rgba(232,122,122,.08); border:1px solid rgba(232,122,122,.25); border-radius:9px; padding:10px 14px; font-size:.78rem; color:var(--red); margin-bottom:13px; display:none; line-height:1.5; }
+    .success-box { background:rgba(122,232,160,.08); border:1px solid rgba(122,232,160,.25); border-radius:9px; padding:10px 14px; font-size:.78rem; color:var(--green); margin-bottom:13px; display:none; }
+
+    /* SUBMIT */
+    .btn-submit { width:100%; padding:12px; border-radius:10px; border:none; font-family:var(--font-b); font-size:.89rem; font-weight:600; cursor:pointer; transition:all .2s; margin-top:4px; display:flex; align-items:center; justify-content:center; gap:8px; }
+    .btn-recruiter { background:var(--gold); color:#080910; box-shadow:0 4px 18px rgba(232,194,122,.22); }
+    .btn-recruiter:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 26px rgba(232,194,122,.38); }
+    .btn-seeker { background:var(--blue); color:#080910; box-shadow:0 4px 18px rgba(122,184,232,.22); }
+    .btn-seeker:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 26px rgba(122,184,232,.36); }
+    .btn-submit:disabled { opacity:.6; cursor:not-allowed; transform:none !important; }
+
+    /* PW STRENGTH */
+    .pw-strength { display:flex; gap:3px; margin-top:5px; }
+    .pw-bar { height:3px; flex:1; border-radius:99px; background:var(--surface3); transition:background .25s; }
+    .pw-bar.weak { background:var(--red); }
+    .pw-bar.medium { background:var(--gold); }
+    .pw-bar.strong { background:var(--green); }
+
+    .hint-row { text-align:center; margin-top:16px; font-size:.7rem; color:var(--muted2); line-height:1.9; }
+    .hint-row code { background:rgba(255,255,255,.06); padding:1px 7px; border-radius:5px; color:var(--muted); font-size:.68rem; }
+
+    .divider { display:flex; align-items:center; gap:8px; margin:10px 0; color:var(--muted2); font-size:.7rem; }
+    .divider::before, .divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
+    .spinner { width:15px; height:15px; border:2px solid rgba(0,0,0,.2); border-top-color:rgba(0,0,0,.7); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+    @media(max-width:800px) { .left-panel{display:none} .right-panel{padding:24px 20px} }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- LEFT HERO -->
+  <div class="left-panel">
+    <div class="brand">
+      <div class="brand-logo">Talent<em>Bridge</em></div>
+      <div class="brand-tagline">Where careers connect</div>
+    </div>
+    <div class="left-heading">Find the <em>right fit,</em><br>every time.</div>
+    <p class="left-sub">TalentBridge connects ambitious job seekers with world-class companies — any recruiter can create their company and start hiring in minutes.</p>
+    <div class="feature-list">
+      <div class="feature-item">
+        <div class="feature-icon fi-gold">🏢</div>
+        <div><div class="feat-label">Any company, instantly</div>Create your company profile and start posting jobs in 60 seconds</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon fi-blue">🎯</div>
+        <div><div class="feat-label">Real-time hiring pipeline</div>Track every candidate from applied to hired — live</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon fi-green">🔔</div>
+        <div><div class="feat-label">Job seekers apply directly</div>One-click applications land right in your dashboard</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT AUTH -->
+  <div class="right-panel">
+    <div class="auth-box">
+
+      <!-- ROLE SELECTOR -->
+      <div class="role-selector">
+        <div class="role-card recruiter active" id="card-recruiter" onclick="selectRole('recruiter')">
+          <div class="role-check">✓</div>
+          <span class="role-emoji">👩‍💼</span>
+          <div class="role-label">Recruiter</div>
+          <div class="role-desc">Post jobs & manage candidates</div>
+        </div>
+        <div class="role-card seeker" id="card-seeker" onclick="selectRole('seeker')">
+          <div class="role-check">✓</div>
+          <span class="role-emoji">🧑‍💻</span>
+          <div class="role-label">Job Seeker</div>
+          <div class="role-desc">Find jobs & track applications</div>
+        </div>
+      </div>
+
+      <!-- TABS -->
+      <div class="tab-switcher">
+        <button class="tab-btn active" id="tab-login"    onclick="switchTab('login')">Sign In</button>
+        <button class="tab-btn"        id="tab-register" onclick="switchTab('register')">Create Account</button>
+      </div>
+
+      <!-- MESSAGES -->
+      <div class="error-box"   id="err-msg"></div>
+      <div class="success-box" id="ok-msg"></div>
+
+      <!-- ── SIGN IN FORM ── -->
+      <div class="form-section visible" id="form-login">
+        <div class="field">
+          <label>Email Address</label>
+          <input type="email" id="l-email" placeholder="your@email.com" autocomplete="email"/>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="l-pw" placeholder="••••••••" autocomplete="current-password"/>
+        </div>
+        <button class="btn-submit btn-recruiter" id="btn-login" onclick="doLogin()">Sign In</button>
+      </div>
+
+      <!-- ── CREATE ACCOUNT FORM ── -->
+      <div class="form-section" id="form-register">
+
+        <!-- Name row -->
+        <div class="field-row">
+          <div class="field"><label>First Name</label><input type="text" id="r-fname" placeholder="Jane"/></div>
+          <div class="field"><label>Last Name</label><input type="text" id="r-lname" placeholder="Smith"/></div>
+        </div>
+        <div class="field">
+          <label>Email Address</label>
+          <input type="email" id="r-email" placeholder="your@email.com" autocomplete="email"/>
+        </div>
+
+        <!-- RECRUITER SPECIFIC -->
+        <div id="recruiter-fields">
+          <div class="field">
+            <label>Your Job Title</label>
+            <input type="text" id="r-title" placeholder="e.g. Head of Talent Acquisition"/>
+          </div>
+
+          <div class="divider">Company</div>
+
+          <!-- Toggle: create new / join existing -->
+          <div class="company-mode-toggle">
+            <div class="cmt-btn active" id="cmt-new"  onclick="setCompanyMode('new')">➕ Create New Company</div>
+            <div class="cmt-btn"        id="cmt-join" onclick="setCompanyMode('join')">🔍 Join Existing</div>
+          </div>
+
+          <!-- CREATE NEW -->
+          <div class="company-panel visible" id="panel-new">
+            <div class="field">
+              <label>Company Name *</label>
+              <input type="text" id="co-name" placeholder="e.g. Acme Corp"/>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Industry</label><input type="text" id="co-industry" placeholder="Technology"/></div>
+              <div class="field"><label>Location</label><input type="text" id="co-location" placeholder="New York, NY"/></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Website</label><input type="text" id="co-website" placeholder="acme.com"/></div>
+              <div class="field"><label>Employees</label><input type="number" id="co-employees" placeholder="50"/></div>
+            </div>
+          </div>
+
+          <!-- JOIN EXISTING -->
+          <div class="company-panel" id="panel-join">
+            <div class="field">
+              <label>Search Company</label>
+              <div class="company-search-wrap">
+                <input type="text" id="co-search" placeholder="Type company name…" oninput="searchCompanies(this.value)" autocomplete="off"/>
+                <div class="company-dropdown" id="co-dropdown"></div>
+              </div>
+            </div>
+            <div id="co-selected-display" style="display:none;padding:10px 13px;border-radius:10px;background:var(--gold2);border:1px solid rgba(232,194,122,.25);font-size:.82rem;font-weight:600;color:var(--gold);margin-bottom:4px"></div>
+            <input type="hidden" id="co-selected-id"/>
+          </div>
+        </div>
+
+        <!-- JOB SEEKER SPECIFIC -->
+        <div id="seeker-fields" style="display:none">
+          <div class="field"><label>Current Role / Title</label><input type="text" id="r-role" placeholder="e.g. Frontend Developer"/></div>
+          <div class="field"><label>Location</label><input type="text" id="r-location" placeholder="City, Country"/></div>
+        </div>
+
+        <!-- PASSWORD -->
+        <div class="field" style="margin-top:4px">
+          <label>Password</label>
+          <input type="password" id="r-pw" placeholder="Min. 6 characters" oninput="checkStrength(this.value)" autocomplete="new-password"/>
+          <div class="pw-strength">
+            <div class="pw-bar" id="bar1"></div>
+            <div class="pw-bar" id="bar2"></div>
+            <div class="pw-bar" id="bar3"></div>
+            <div class="pw-bar" id="bar4"></div>
+          </div>
+        </div>
+
+        <button class="btn-submit btn-recruiter" id="btn-register" onclick="doRegister()">Create Account</button>
+      </div>
+
+      
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+let selectedRole   = 'recruiter';
+let activeTab      = 'login';
+let companyMode    = 'new';       // 'new' | 'join'
+let selectedCompanyId = null;
+let companySearchTimer;
+
+// Redirect if already logged in
+const existingToken = localStorage.getItem('tb_access_token');
+if (existingToken) {
+  const u = JSON.parse(localStorage.getItem('tb_user') || '{}');
+  window.location.href = u.user_type === 'job_seeker' ? 'seeker-portal.html' : 'dashboard.html';
+}
+
+// ── ROLE ─────────────────────────────────────────────────────────────────────
+function selectRole(role) {
+  selectedRole = role;
+  document.getElementById('card-recruiter').className = `role-card recruiter ${role==='recruiter'?'active':''}`;
+  document.getElementById('card-seeker').className    = `role-card seeker ${role==='seeker'?'active':''}`;
+  const cls = role === 'recruiter' ? 'btn-recruiter' : 'btn-seeker';
+  document.getElementById('btn-login').className    = `btn-submit ${cls}`;
+  document.getElementById('btn-register').className = `btn-submit ${cls}`;
+  document.getElementById('recruiter-fields').style.display = role==='recruiter' ? '' : 'none';
+  document.getElementById('seeker-fields').style.display    = role==='seeker'    ? '' : 'none';
+  clearMessages();
+}
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-login').classList.toggle('active',    tab==='login');
+  document.getElementById('tab-register').classList.toggle('active', tab==='register');
+  document.getElementById('form-login').classList.toggle('visible',    tab==='login');
+  document.getElementById('form-register').classList.toggle('visible', tab==='register');
+  clearMessages();
+}
+
+// ── COMPANY MODE ─────────────────────────────────────────────────────────────
+function setCompanyMode(mode) {
+  companyMode = mode;
+  document.getElementById('cmt-new').classList.toggle('active',  mode==='new');
+  document.getElementById('cmt-join').classList.toggle('active', mode==='join');
+  document.getElementById('panel-new').classList.toggle('visible',  mode==='new');
+  document.getElementById('panel-join').classList.toggle('visible', mode==='join');
+  selectedCompanyId = null;
+  document.getElementById('co-selected-id').value = '';
+  document.getElementById('co-selected-display').style.display = 'none';
+  clearMessages();
+}
+
+// ── COMPANY SEARCH ────────────────────────────────────────────────────────────
+function searchCompanies(q) {
+  clearTimeout(companySearchTimer);
+  const dd = document.getElementById('co-dropdown');
+  if (!q || q.length < 1) { dd.classList.remove('open'); return; }
+  companySearchTimer = setTimeout(async () => {
+    try {
+      const res  = await fetch(`${API}/companies?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!data.length) {
+        dd.innerHTML = '<div class="co-empty">No companies found. Create a new one instead.</div>';
+      } else {
+        dd.innerHTML = data.map(c => `
+          <div class="co-item" onclick="selectCompany(${c.id},'${(c.name||'').replace(/'/g,"\\'")}','${c.industry||''}','${c.location||''}','${c.logo_emoji||'🏢'}')">
+            <span class="co-logo">${c.logo_emoji||'🏢'}</span>
+            <div>
+              <div class="co-name">${c.name}</div>
+              <div class="co-meta">${[c.industry,c.location].filter(Boolean).join(' · ')}</div>
+            </div>
+          </div>`).join('');
+      }
+      dd.classList.add('open');
+    } catch { dd.innerHTML='<div class="co-empty">Error loading companies</div>'; dd.classList.add('open'); }
+  }, 300);
+}
+
+function selectCompany(id, name, industry, location, logo) {
+  selectedCompanyId = id;
+  document.getElementById('co-selected-id').value = id;
+  document.getElementById('co-search').value = name;
+  document.getElementById('co-dropdown').classList.remove('open');
+  const disp = document.getElementById('co-selected-display');
+  disp.textContent = `${logo} ${name}${industry ? ' · '+industry : ''}${location ? ' · '+location : ''}`;
+  disp.style.display = 'block';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.company-search-wrap')) {
+    document.getElementById('co-dropdown').classList.remove('open');
+  }
+});
+
+// ── MESSAGES ─────────────────────────────────────────────────────────────────
+function showError(msg)   { const e=document.getElementById('err-msg'); e.textContent=msg; e.style.display=msg?'block':'none'; document.getElementById('ok-msg').style.display='none'; }
+function showSuccess(msg) { const e=document.getElementById('ok-msg');  e.textContent=msg; e.style.display='block'; document.getElementById('err-msg').style.display='none'; }
+function clearMessages()  { document.getElementById('err-msg').style.display='none'; document.getElementById('ok-msg').style.display='none'; }
+
+// ── PASSWORD STRENGTH ─────────────────────────────────────────────────────────
+function checkStrength(pw) {
+  let s = 0;
+  if (pw.length >= 6)  s++;
+  if (pw.length >= 10) s++;
+  if (/[A-Z]/.test(pw) && /[0-9]/.test(pw)) s++;
+  if (/[^A-Za-z0-9]/.test(pw)) s++;
+  const cols = ['','weak','medium','medium','strong'];
+  for (let i=1;i<=4;i++) document.getElementById(`bar${i}`).className=`pw-bar ${i<=s?cols[s]:''}`;
+}
+
+// ── LOADING ───────────────────────────────────────────────────────────────────
+function setLoading(id, on, label) {
+  const b = document.getElementById(id);
+  b.disabled = on;
+  b.innerHTML = on ? '<div class="spinner"></div> Please wait…' : label;
+}
+
+// ── SIGN IN ───────────────────────────────────────────────────────────────────
+async function doLogin() {
+  clearMessages();
+  const email = document.getElementById('l-email').value.trim();
+  const pw    = document.getElementById('l-pw').value;
+  if (!email || !pw) { showError('Please enter your email and password.'); return; }
+
+  const userType = selectedRole === 'seeker' ? 'job_seeker' : 'recruiter';
+  setLoading('btn-login', true, 'Sign In');
+  try {
+    const res  = await fetch(`${API}/auth/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password: pw, user_type: userType })
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || 'Sign in failed. Please check your credentials.'); return; }
+
+    localStorage.setItem('tb_access_token', data.access_token);
+    localStorage.setItem('tb_user', JSON.stringify(data.user));
+    showSuccess(`Welcome back, ${data.user.name}! Redirecting…`);
+    setTimeout(() => {
+      window.location.href = data.user.user_type === 'job_seeker' ? 'seeker-portal.html' : 'dashboard.html';
+    }, 500);
+  } catch {
+    showError('Cannot reach the server. Make sure python3 server.py is running on port 8000.');
+  } finally {
+    setLoading('btn-login', false, 'Sign In');
+  }
+}
+
+// ── CREATE ACCOUNT ────────────────────────────────────────────────────────────
+async function doRegister() {
+  clearMessages();
+  const fname = document.getElementById('r-fname').value.trim();
+  const lname = document.getElementById('r-lname').value.trim();
+  const email = document.getElementById('r-email').value.trim();
+  const pw    = document.getElementById('r-pw').value;
+
+  if (!fname || !lname) { showError('Please enter your first and last name.'); return; }
+  if (!email)            { showError('Please enter your email address.'); return; }
+  if (!pw || pw.length < 6) { showError('Password must be at least 6 characters.'); return; }
+
+  const userType = selectedRole === 'seeker' ? 'job_seeker' : 'recruiter';
+  const fullName = `${fname} ${lname}`;
+  let payload = { full_name: fullName, email, password: pw, user_type: userType };
+
+  if (userType === 'recruiter') {
+    payload.title = document.getElementById('r-title').value.trim();
+    if (companyMode === 'join') {
+      if (!selectedCompanyId) { showError('Please search for and select a company to join.'); return; }
+      payload.company_id = selectedCompanyId;
+    } else {
+      const coName = document.getElementById('co-name').value.trim();
+      if (!coName) { showError('Please enter your company name.'); return; }
+      payload.company_name      = coName;
+      payload.company_industry  = document.getElementById('co-industry').value.trim();
+      payload.company_location  = document.getElementById('co-location').value.trim();
+      payload.company_website   = document.getElementById('co-website').value.trim();
+      payload.company_employees = parseInt(document.getElementById('co-employees').value) || null;
+    }
+  } else {
+    payload.title    = document.getElementById('r-role').value.trim();
+    payload.location = document.getElementById('r-location').value.trim();
+  }
+
+  setLoading('btn-register', true, 'Create Account');
+  try {
+    const res  = await fetch(`${API}/auth/register`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || 'Registration failed. Please try again.'); return; }
+
+    localStorage.setItem('tb_access_token', data.access_token);
+    localStorage.setItem('tb_user', JSON.stringify({ user_type: data.user_type, name: fullName }));
+    showSuccess(`Account created! Welcome, ${fname}! Redirecting…`);
+    setTimeout(() => {
+      window.location.href = data.user_type === 'job_seeker' ? 'seeker-portal.html' : 'dashboard.html';
+    }, 600);
+  } catch {
+    showError('Cannot reach the server. Make sure python3 server.py is running on port 8000.');
+  } finally {
+    setLoading('btn-register', false, 'Create Account');
+  }
+}
+
+// Enter key submits active form
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (activeTab === 'login')    doLogin();
+  if (activeTab === 'register') doRegister();
+});
+</script>
+</body>
+</html>
