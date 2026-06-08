@@ -1628,12 +1628,9 @@ async function showCandidatesView() {
   } catch {}
   const seekerApps = await getRecruiterApplications();
   const coverLetters = getSeekerCoverLetters();
-  const merged = [...seekerApps.map(a => ({
-    id:a.job_id||a.id,full_name:a.job_title?`Applicant (${a.job_title})`:'Applicant',
-    email:a.email||'—',job_title:a.job_title||'—',stage:a.stage||'applied',
-    applied_at:a.applied_at,cover_note:a.cover_note,phone:a.phone,
-    _fromSeeker:true,_jobId:a.job_id||a.id,
-  })), ...serverCands];
+  console.log('SEEKER APPS:', seekerApps);
+  console.log('SERVER CANDS:', serverCands);
+  const merged = [...serverCands];
   document.getElementById('cand-count').textContent = `(${merged.length})`;
   if (!merged.length) { document.getElementById('candidates-list').innerHTML = '<div class="empty-state">No candidates yet</div>'; return; }
   window._allCandidates = merged;
