@@ -329,7 +329,10 @@ let activeTab      = 'login';
 let companyMode    = 'new';       // 'new' | 'join'
 let selectedCompanyId = null;
 let companySearchTimer;
-
+window.addEventListener('load', () => {
+  fetch('https://talentbridge-backend-8nia.onrender.com/jobs')
+    .catch(() => {});
+});
 // Redirect if already logged in
 const existingToken = localStorage.getItem('tb_access_token');
 if (existingToken) {
