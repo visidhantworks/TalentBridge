@@ -13,15 +13,16 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timezone
 # ── CONFIG ──────────────────────────────────────────────────────────────────
-PORT = 8000
+PORT = int(os.getenv("PORT", 8000))
 SECRET_KEY = "talentbridge-super-secret-2025"
 TOKEN_TTL = 86400
 def get_db():
     return psycopg2.connect(
-        host="localhost",
-        database="talentbridge",
-        user="postgres",
-        password="pass123",
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT"),
         cursor_factory=RealDictCursor
     )
 def _b64(data):
