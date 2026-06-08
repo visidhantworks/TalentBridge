@@ -385,8 +385,8 @@
 <div class="modal-overlay" id="modal-schedule">
   <div class="modal" style="max-width:500px">
     <div class="modal-title">📅 Schedule Interview</div>
-    <div class="form-group"><label class="form-label">Candidate Name *</label><input class="form-input" id="si-name" placeholder="e.g. Alex Rivera"/></div>
-    <div class="form-group"><label class="form-label">Applied For *</label><input class="form-input" id="si-role" placeholder="e.g. Frontend Engineer"/></div>
+    <div class="form-group"><label class="form-label">Candidate</label><input class="form-input" id="si-candidate" readonly></div>
+    <div class="form-group"><label class="form-label">Role</label><input class="form-input" id="si-job" readonly></div> 
     <div class="form-row">
       <div class="form-group"><label class="form-label">Date *</label><input class="form-input" type="date" id="si-date"/></div>
       <div class="form-group"><label class="form-label">Time *</label><input class="form-input" type="time" id="si-time"/></div>
@@ -505,9 +505,24 @@
    GLOBALS & INIT
 ══════════════════════════════════════════════════════════════════════ */
 const API = 'http://127.0.0.1:8000';
-let token = localStorage.getItem('tb_access_token') || 'demo_token';
-localStorage.setItem('tb_access_token', token);
+const token = localStorage.getItem('tb_access_token');
 
+if (!token) {
+  window.location.href = 'login.html';
+  throw new Error('No auth token');
+}
+
+try {
+  const payload = JSON.parse(atob(token.split('.')[1]));
+
+  if (payload.utype !== 'recruiter') {
+    window.location.href = 'login.html';
+    throw new Error('Recruiter account required');
+  }
+} catch {
+  window.location.href = 'login.html';
+  throw new Error('Invalid token');
+}
 let dashData = null;
 let chartInstance = null;
 let currentFilter = '1Y';
@@ -522,18 +537,61 @@ let currentEventId = null;       // event open in detail modal
 let activeNotifEventId = null;   // which event is being notified
 let notifTimers = {};            // eventId → timer handle
 let snoozedUntil = {};           // eventId → snooze-until timestamp
+let selectedCandidateId = null;
+let selectedJobId = null;
+function getUserId() {
+  const payload = JSON.parse(atob(token.split('.')[1]));
+  return payload.uid;
+}
+function openScheduleInterview(candidate) {
+  selectedCandidateId = candidate.id;
+  selectedJobId = candidate.job_id;
+
+  document.getElementById('si-candidate').value =
+    candidate.full_name;
+
+  document.getElementById('si-job').value =
+    candidate.job_title;
+
+  openModal('modal-schedule');
+}
+let cachedEvents = [];
+
+async function loadEvents() {
+  try {
+    const res = await fetch(`${API}/recruiter/interviews`, {
+      headers: authHeaders()
+    });
+
+    if (!res.ok) throw new Error();
+
+    cachedEvents = await res.json();
+  } catch (err) {
+    console.error('Failed to load interviews', err);
+    cachedEvents = [];
+  }
+}
 
 function getEvents() {
-  try { return JSON.parse(localStorage.getItem('tb_interviews') || '[]'); }
-  catch { return []; }
+  return cachedEvents;
 }
-function saveEvents(events) { localStorage.setItem('tb_interviews', JSON.stringify(events)); }
+function getSeenApps() {
+  return JSON.parse(
+    localStorage.getItem(`rec_seen_apps_${getUserId()}`) || '[]'
+  );
+}
 
-function getSeenApps() { return JSON.parse(localStorage.getItem('rec_seen_apps') || '[]'); }
 function markAppSeen(id) {
   const seen = getSeenApps();
-  if (!seen.includes(String(id))) seen.push(String(id));
-  localStorage.setItem('rec_seen_apps', JSON.stringify(seen));
+
+  if (!seen.includes(String(id))) {
+    seen.push(String(id));
+  }
+
+  localStorage.setItem(
+    `rec_seen_apps_${getUserId()}`,
+    JSON.stringify(seen)
+  );
 }
 function doLogout() {
   localStorage.removeItem('tb_access_token');
@@ -571,14 +629,29 @@ const EV_COLOR     = {screening:'var(--purple)',interview:'var(--blue)',offer:'v
 const EV_DOT_CLASS = {screening:'screening',interview:'interview',offer:'offer',panel:'interview'};
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
 
-function getSeekerApplications() {
-  try { return JSON.parse(localStorage.getItem('tb_applications') || '[]'); } catch { return []; }
+
+async function getRecruiterApplications() {
+  const url = `${API}/candidates`;
+
+  console.log("FETCH URL:", url);
+
+  const r = await fetch(url, {
+    headers: authHeaders()
+  });
+
+  console.log("STATUS:", r.status);
+
+  const data = await r.json();
+
+  console.log("APPLICATIONS:", data);
+
+  return Array.isArray(data) ? data : [];
 }
 function getSeekerCoverLetters() {
   try { return JSON.parse(localStorage.getItem('tb_cover_letters') || '{}'); } catch { return {}; }
 }
-function countNewApps() {
-  const apps = getSeekerApplications(), seen = getSeenApps();
+async function countNewApps() {
+  const apps = await getRecruiterApplications(), seen = getSeenApps();
   return apps.filter(a => !seen.includes(String(a.job_id || a.id))).length;
 }
 function updateNewAppsBadge() {
@@ -634,7 +707,7 @@ function buildDemoDash() {
 /* ══════════════════════════════════════════════════════════════════════
    RENDER DASHBOARD
 ══════════════════════════════════════════════════════════════════════ */
-function renderDashboard(d) {
+async function renderDashboard(d) {
   const co = d.company, rec = d.recruiter, st = d.stats;
   document.getElementById('sb-name').textContent = rec.name;
   document.getElementById('sb-title').textContent = rec.title;
@@ -642,7 +715,7 @@ function renderDashboard(d) {
 
   const salaryFmt = (min, max) => (min && max) ? `$${(min/1000).toFixed(0)}k–$${(max/1000).toFixed(0)}k` : '';
 
-  const seekerApps = getSeekerApplications();
+  const seekerApps = await getRecruiterApplications();
   const coverLetters = getSeekerCoverLetters();
   const seen = getSeenApps();
   const newCount = seekerApps.filter(a => !seen.includes(String(a.job_id || a.id))).length;
@@ -815,7 +888,10 @@ function renderDashboard(d) {
     </div>`;
 
   // init calendar + chart
-  renderCalendar();
+  (async () => {
+      await loadEvents();
+      renderCalendar();
+    })();
   loadChart('1Y', null);
   startInboxPolling();
   startNotifChecker();
@@ -843,7 +919,7 @@ function renderCalendar() {
 
   // Today's events count
   const todayStr = now.toISOString().slice(0,10);
-  const todayEvs = events.filter(e => e.date === todayStr);
+  const todayEvs = events.filter(e => e.interview_date === todayStr);
   const todaySub = document.getElementById('cal-today-events-count');
   if (todaySub) todaySub.textContent = todayEvs.length > 0
     ? `${todayEvs.length} interview${todayEvs.length > 1 ? 's' : ''} scheduled`
@@ -878,7 +954,7 @@ function renderCalendar() {
 
     const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}-${String(dateObj.getDate()).padStart(2,'0')}`;
     const isToday = dateStr === todayStr;
-    const dayEvents = events.filter(e => e.date === dateStr);
+    const dayEvents = events.filter(e => e.interview_date === dateStr);
     const hasEvent = dayEvents.length > 0;
 
     let cls = 'cal-day';
@@ -890,16 +966,16 @@ function renderCalendar() {
     let dotsHtml = '';
     if (dayEvents.length > 0) {
       const shown = dayEvents.slice(0,3);
-      dotsHtml = `<div class="cal-day-dots">${shown.map(e => `<div class="cal-dot ${EV_DOT_CLASS[e.type]||'interview'}"></div>`).join('')}</div>`;
+      dotsHtml = `<div class="cal-day-dots">${shown.map(e => `<div class="cal-dot ${EV_DOT_CLASS[e.interview_type]||'interview'}"></div>`).join('')}</div>`;
       if (dayEvents.length === 1) {
-        dotsHtml += `<div class="cal-event-chip">${dayEvents[0].name}</div>`;
+        dotsHtml += `<div class="cal-event-chip">${dayEvents[0].full_name}</div>`;
       } else {
         dotsHtml += `<div class="cal-event-chip">${dayEvents.length} interviews</div>`;
       }
     }
 
     html += `<div class="${cls}" onclick="selectCalDay('${dateStr}')"
-               title="${hasEvent ? dayEvents.map(e=>e.name).join(', ') : ''}">
+               title="${hasEvent ? dayEvents.map(e=>e.full_name).join(', ') : ''}">
               <div class="cal-day-num">${dayNum}</div>
               ${dotsHtml}
              </div>`;
@@ -913,7 +989,7 @@ function selectCalDay(dateStr) {
   calSelectedDay = dateStr;
   renderCalendar();
   // If day has events, open first; else open schedule modal prefilled
-  const events = getEvents().filter(e => e.date === dateStr);
+  const events = getEvents().filter(e => e.interview_date === dateStr);
   if (events.length === 1) {
     openEventDetail(events[0].id);
   } else if (events.length > 1) {
@@ -932,8 +1008,8 @@ function renderUpcoming() {
   const todayStr = now.toISOString().slice(0, 10);
 
   const upcoming = events
-    .filter(e => e.date >= todayStr)
-    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+    .filter(e => e.interview_date >= todayStr)
+    .sort((a, b) =>(a.interview_date + (a.interview_time || '')).localeCompare(b.interview_date + (b.interview_time || '')))
     .slice(0, 5);
 
   const container = document.getElementById('upcoming-list');
@@ -945,13 +1021,13 @@ function renderUpcoming() {
   }
 
   container.innerHTML = upcoming.map(ev => {
-    const evDate = new Date(ev.date + 'T' + (ev.time || '09:00'));
-    const isToday = ev.date === todayStr;
-    const isTomorrow = ev.date === new Date(now.getFullYear(), now.getMonth(), now.getDate()+1).toISOString().slice(0,10);
+    const evDate = new Date(ev.interview_date + 'T' + (ev.interview_time || '09:00'));
+    const isToday = ev.interview_date === todayStr;
+    const isTomorrow = ev.interview_date === new Date(now.getFullYear(), now.getMonth(), now.getDate()+1).toISOString().slice(0,10);
     const label = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : evDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-    const t12 = ev.time ? formatTime12(ev.time) : '';
-    const color = EV_COLOR[ev.type] || 'var(--blue)';
-    const minutesAway = ev.time ? Math.round((evDate - now) / 60000) : null;
+    const t12 = ev.interview_time? formatTime12(ev.interview_time) : { time:'—', ampm:'' };
+    const color = EV_COLOR[ev.interview_type] || 'var(--blue)';
+    const minutesAway = ev.interview_time ? Math.round((evDate - now) / 60000) : null;
     const alertIcon = (minutesAway !== null && minutesAway > 0 && minutesAway <= 30) ? '🔔' : '';
 
     return `
@@ -964,10 +1040,10 @@ function renderUpcoming() {
         </div>
         <div class="event-bar" style="background:${color}"></div>
         <div class="event-info">
-          <div class="event-name">${ev.name}</div>
+          <div class="event-name">${ev.full_name}</div>
           <div class="event-role">${ev.role}</div>
           <div class="event-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">
-            ${cap(ev.type)} · ${ev.duration || 60}min
+            ${cap(ev.interview_type)} · ${ev.duration_minutes || 60}min
           </div>
         </div>
       </div>`;
@@ -1003,23 +1079,33 @@ function openScheduleInterview() {
   const d = new Date();
   document.getElementById('si-date').value  = d.toISOString().slice(0,10);
   document.getElementById('si-time').value  = '10:00';
-  document.getElementById('si-name').value  = '';
-  document.getElementById('si-role').value  = '';
   document.getElementById('si-loc').value   = '';
   document.getElementById('si-notes').value = '';
   openModal('modal-schedule');
 }
 
-function openScheduleForApp(jobTitle, jobId) {
-  document.getElementById('si-date').value  = new Date().toISOString().slice(0,10);
-  document.getElementById('si-time').value  = '10:00';
-  document.getElementById('si-name').value  = '';
-  document.getElementById('si-role').value  = jobTitle || '';
-  document.getElementById('si-loc').value   = '';
-  document.getElementById('si-notes').value = '';
+function openScheduleForApp(candidateId, candidateName, jobTitle, jobId) {
+  console.log('OPEN SCHEDULE', {
+    candidateId,
+    candidateName,
+    jobTitle,
+    jobId
+  });
+
+  selectedCandidateId = candidateId;
+  selectedJobId = jobId;
+
+  document.getElementById('si-candidate').value = candidateName;
+  document.getElementById('si-job').value = jobTitle;
+
+  document.getElementById('si-date').value =
+    new Date().toISOString().slice(0,10);
+
+  document.getElementById('si-time').value = '10:00';
+
+  closeModal('modal-candidates');
   openModal('modal-schedule');
 }
-
 function openScheduleFromDetail() {
   closeModal('modal-candidate-detail');
   const role = document.getElementById('cd-job').textContent || '';
@@ -1029,38 +1115,42 @@ function openScheduleFromDetail() {
   openModal('modal-schedule');
 }
 
-function submitInterview() {
-  const name = document.getElementById('si-name').value.trim();
-  const role = document.getElementById('si-role').value.trim();
+async function submitInterview() {
+  console.log("submit clicked!");
   const date = document.getElementById('si-date').value;
   const time = document.getElementById('si-time').value;
-  if (!name || !role || !date || !time) {
-    toast('Please fill in candidate name, role, date and time','error');
+  console.log({
+  selectedCandidateId,
+  selectedJobId});
+  const res = await fetch(`${API}/recruiter/interviews`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+      'Content-Type': 'application/json'
+    },
+     body: JSON.stringify({
+        candidate_id: selectedCandidateId,
+        job_id: selectedJobId,
+
+        title: `${document.getElementById('si-type').value} Interview`,
+
+        interview_type: document.getElementById('si-type').value,
+        interview_date: date,
+        interview_time: time,
+        duration_minutes: parseInt(document.getElementById('si-dur').value),
+        location: document.getElementById('si-loc').value,
+        notes: document.getElementById('si-notes').value
+      })
+  });
+
+  if (!res.ok) {
+    toast('Failed to schedule interview', 'error');
     return;
   }
-  const ev = {
-    id:       `ev_${Date.now()}`,
-    name,
-    role,
-    date,
-    time,
-    type:     document.getElementById('si-type').value,
-    duration: parseInt(document.getElementById('si-dur').value),
-    location: document.getElementById('si-loc').value,
-    notes:    document.getElementById('si-notes').value,
-    remind:   parseInt(document.getElementById('si-remind').value),
-    createdAt: new Date().toISOString()
-  };
-  const events = getEvents();
-  events.push(ev);
-  saveEvents(events);
-  closeModal('modal-schedule');
-  toast(`✅ Interview scheduled: ${name} on ${formatDatePretty(date)} at ${formatTime12(time).time} ${formatTime12(time).ampm}`);
-  renderCalendar();
-  scheduleNotifTimer(ev);
-  updateBellBadge();
-}
 
+  toast('Interview scheduled');
+  closeModal('modal-schedule');
+}
 function formatDatePretty(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'});
 }
@@ -1072,41 +1162,71 @@ function openEventDetail(eventId) {
   const ev = getEvents().find(e => e.id === eventId);
   if (!ev) return;
   currentEventId = eventId;
-  const color = EV_COLOR[ev.type] || 'var(--blue)';
-  const t12 = ev.time ? formatTime12(ev.time) : {time:'—',ampm:''};
-  document.getElementById('ev-title').textContent = `${cap(ev.type)} — ${ev.name}`;
+  const color = EV_COLOR[ev.interview_type] || 'var(--blue)';
+  const t12 = ev.time ? formatTime12(ev.interview_time) : {time:'—',ampm:''};
+  document.getElementById('ev-title').textContent = `${cap(ev.interview_type)} — ${ev.full_name}`;
   document.getElementById('ev-body').innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;padding:14px;background:${color}12;border:1px solid ${color}30;border-radius:12px;margin-bottom:16px">
       <div style="font-size:2rem">📅</div>
       <div>
-        <div style="font-family:var(--font-d);font-size:1.1rem;font-weight:700">${formatDatePretty(ev.date)}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:2px">${t12.time} ${t12.ampm} · ${ev.duration} min</div>
+        <div style="font-family:var(--font-d);font-size:1.1rem;font-weight:700">${formatDatePretty(ev.interview_date)}</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-top:2px">${t12.time} ${t12.ampm} · ${ev.duration_minutes} min</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-      <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Candidate</div><div style="font-size:.86rem;font-weight:600">${ev.name}</div></div>
+      <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Candidate</div><div style="font-size:.86rem;font-weight:600">${ev.full_name}</div></div>
       <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Role</div><div style="font-size:.86rem">${ev.role}</div></div>
-      <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Type</div><div style="font-size:.86rem">${cap(ev.type)}</div></div>
-      <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Reminder</div><div style="font-size:.86rem">${ev.remind} min before</div></div>
-    </div>
+      <div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Type</div><div style="font-size:.86rem">${cap(ev.interview_type)}</div></div>
+      <div><div>Status</div><div>${cap(ev.status || 'scheduled')}</div></div>
     ${ev.location ? `<div style="margin-bottom:12px"><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Location</div><div style="font-size:.84rem;color:var(--blue)">${ev.location}</div></div>` : ''}
     ${ev.notes    ? `<div><div style="font-size:.65rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Notes</div><div style="font-size:.82rem;color:var(--muted);line-height:1.6">${ev.notes}</div></div>` : ''}
   `;
   openModal('modal-event-detail');
 }
 
-function deleteCurrentEvent() {
-  if (!currentEventId) return;
-  const events = getEvents().filter(e => e.id !== currentEventId);
-  saveEvents(events);
-  closeModal('modal-event-detail');
-  renderCalendar();
-  updateBellBadge();
-  toast('Interview removed from calendar');
-  if (notifTimers[currentEventId]) { clearTimeout(notifTimers[currentEventId]); delete notifTimers[currentEventId]; }
-  currentEventId = null;
-}
+    async function deleteCurrentEvent() {
+      if (!currentEventId) return;
 
+      try {
+        const res = await fetch(
+          `${API}/recruiter/interviews`,
+          {
+            method: 'DELETE',
+            headers: authHeaders(),
+            body: JSON.stringify({
+              id: currentEventId
+            })
+          }
+        );
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          toast(data.error || 'Delete failed', 'error');
+          return;
+        }
+
+        closeModal('modal-event-detail');
+
+        await loadEvents();
+
+        renderCalendar();
+        updateBellBadge();
+
+        if (notifTimers[currentEventId]) {
+          clearTimeout(notifTimers[currentEventId]);
+          delete notifTimers[currentEventId];
+        }
+
+        currentEventId = null;
+
+        toast('Interview deleted');
+      }
+      catch (err) {
+        console.error(err);
+        toast('Network error', 'error');
+      }
+    }
 /* ══════════════════════════════════════════════════════════════════════
    NOTIFICATION SYSTEM
 ══════════════════════════════════════════════════════════════════════ */
@@ -1124,8 +1244,8 @@ function checkAndFireNotifs() {
   const now = new Date();
 
   for (const ev of events) {
-    if (!ev.date || !ev.time) continue;
-    const evDt = new Date(ev.date + 'T' + ev.time);
+    if (!ev.interview_date || !ev.interview_time) continue;
+    const evDt = new Date(ev.interview_date + 'T' + ev.interview_time);
     const minutesUntil = (evDt - now) / 60000;
     const remindMin = ev.remind || 15;
     const notifKey = `${ev.id}_${remindMin}`;
@@ -1144,8 +1264,8 @@ function checkAndFireNotifs() {
 
 function scheduleNotifTimer(ev) {
   // Schedule the first check right when the reminder window opens
-  if (!ev.date || !ev.time) return;
-  const evDt    = new Date(ev.date + 'T' + ev.time);
+  if (!ev.interview_date || !ev.interview_time) return;
+  const evDt    = new Date(ev.interview_date + 'T' + ev.interview_time);
   const remindMs = (ev.remind || 15) * 60 * 1000;
   const fireAt   = evDt - remindMs;
   const delay    = fireAt - Date.now();
@@ -1157,15 +1277,15 @@ function scheduleNotifTimer(ev) {
 
 function showNotifPopup(ev, minutesUntil) {
   activeNotifEventId = ev.id;
-  const t12 = formatTime12(ev.time);
+  const t12 = formatTime12(ev.interview_time);
   const mins = Math.round(minutesUntil);
   document.getElementById('notif-title').textContent = '⏰ Interview Starting Soon';
   document.getElementById('notif-body').innerHTML = `
-    <strong>${ev.name}</strong> — ${cap(ev.type)}<br>
+    <strong>${ev.full_name}</strong> — ${cap(ev.interview_type)}<br>
     Role: ${ev.role}
     ${ev.location ? `<br>📍 ${ev.location}` : ''}
     <div class="nb-time">🕐 ${t12.time} ${t12.ampm} · in ~${mins} minute${mins !== 1 ? 's' : ''}</div>`;
-  document.getElementById('notif-countdown').textContent = `Duration: ${ev.duration} min`;
+  document.getElementById('notif-countdown').textContent = `Duration: ${ev.duration_minutes} min`;
 
   const popup = document.getElementById('notif-popup');
   popup.classList.add('show');
@@ -1204,8 +1324,8 @@ function updateBellBadge() {
   const events = getEvents();
   const now = new Date();
   const urgent = events.filter(ev => {
-    if (!ev.date || !ev.time) return false;
-    const evDt = new Date(ev.date + 'T' + ev.time);
+    if (!ev.interview_date || !ev.interview_time) return false;
+    const evDt = new Date(ev.interview_date + 'T' + ev.interview_time);
     const mins = (evDt - now) / 60000;
     return mins > 0 && mins <= (ev.remind || 15);
   });
@@ -1238,8 +1358,8 @@ function startInboxPolling() {
   inboxPollTimer = setInterval(refreshInbox, 15000);
 }
 
-function refreshInbox() {
-  const seekerApps = getSeekerApplications();
+async function refreshInbox() {
+  const seekerApps = await getRecruiterApplications();
   const coverLetters = getSeekerCoverLetters();
   const seen = getSeenApps();
   const newCount = seekerApps.filter(a => !seen.includes(String(a.job_id || a.id))).length;
@@ -1259,7 +1379,7 @@ function refreshInbox() {
         <div class="inbox-actions">
           ${cl ? `<button class="btn-dl" onclick="downloadCV('${a.job_id||a.id}','${(a.job_title||'').replace(/'/g,"\\'")}')">⬇ CV</button>` : '<span style="font-size:.68rem;color:var(--muted2)">No CV</span>'}
           <button class="btn btn-ghost btn-sm" onclick="openCandidateDetail('${a.job_id||a.id}')">View</button>
-          <button class="btn btn-ghost btn-sm" onclick="openScheduleForApp('${a.job_title||''}','${a.job_id||a.id}')" style="padding:6px 9px">📅</button>
+          <button class="btn btn-ghost btn-sm" onclick="openScheduleForApp('${a.id}','${a.job_title||''}','${a.job_id || a.id}' )" style="padding:6px 9px">📅</button>
         </div>
       </div>`;
   }).join('') || '<div class="empty-state">No applications yet</div>';
@@ -1273,9 +1393,14 @@ function refreshInbox() {
   if (ind) { ind.style.opacity = '0'; setTimeout(() => ind.style.opacity = '1', 300); }
 }
 
-function markAllSeen() {
-  getSeekerApplications().forEach(a => markAppSeen(a.job_id || a.id));
-  refreshInbox();
+async function markAllSeen() {
+  const apps = await getRecruiterApplications();
+
+  apps.forEach(a => {
+    markAppSeen(a.job_id || a.id);
+  });
+
+  await refreshInbox();
   updateNewAppsBadge();
   toast('All applications marked as read');
 }
@@ -1294,8 +1419,8 @@ function downloadCV(jobId, jobTitle) {
   toast(`📥 Downloaded: ${a.download}`);
 }
 
-function openCandidateDetail(jobId) {
-  const apps = getSeekerApplications();
+async function openCandidateDetail(jobId) {
+  const apps = await getRecruiterApplications();
   const coverLetters = getSeekerCoverLetters();
   const app = apps.find(a => String(a.job_id || a.id) === String(jobId));
   if (!app) { toast('Application not found','error'); return; }
@@ -1331,9 +1456,9 @@ function openCandidateDetail(jobId) {
   openModal('modal-candidate-detail');
 }
 
-function moveCandidateStageFromDetail(stage) {
+async function moveCandidateStageFromDetail(stage) {
   if (!detailCandidateId) return;
-  const apps = getSeekerApplications();
+  const apps = getRecruiterApplications();
   const idx = apps.findIndex(a => String(a.job_id || a.id) === String(detailCandidateId));
   if (idx >= 0) { apps[idx].stage = stage; localStorage.setItem('tb_applications', JSON.stringify(apps)); }
   fetch(`${API}/candidates`, {method:'PUT',headers:authHeaders(),body:JSON.stringify({id:detailCandidateId,stage})}).catch(() => {});
@@ -1374,8 +1499,8 @@ async function fetchChartData(period) {
   return deriveChartFromSeekerData(period);
 }
 
-function deriveChartFromSeekerData(period) {
-  const apps = getSeekerApplications();
+async function deriveChartFromSeekerData(period) {
+  const apps = getRecruiterApplications();
   const monthCount = period==='6M' ? 6 : period==='2Y' ? 24 : 12;
   const now = new Date();
   const buckets = [];
@@ -1436,6 +1561,7 @@ function drawChart(labels, datasets, source) {
 ══════════════════════════════════════════════════════════════════════ */
 function openPostJob() { openModal('modal-job'); }
 async function submitJob() {
+  console.log("SUBMIT FIRED!");
   const title = document.getElementById('j-title').value.trim();
   if (!title) { toast('Job title is required','error'); return; }
   try {
@@ -1500,7 +1626,7 @@ async function showCandidatesView() {
     const res = await fetch(`${API}/candidates`,{headers:authHeaders()});
     if (res.ok) serverCands = await res.json();
   } catch {}
-  const seekerApps = getSeekerApplications();
+  const seekerApps = await getRecruiterApplications();
   const coverLetters = getSeekerCoverLetters();
   const merged = [...seekerApps.map(a => ({
     id:a.job_id||a.id,full_name:a.job_title?`Applicant (${a.job_title})`:'Applicant',
@@ -1543,7 +1669,7 @@ function renderCandidateTable(cands, coverLetters={}) {
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <div class="stage-badge ${STAGE_CLASS[c.stage]||''}">${cap(c.stage)}</div>
         ${cl ? `<button class="btn-dl" onclick="downloadCV('${jobId}','${(c.job_title||'').replace(/'/g,"\\'")}')">⬇ CV</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="openScheduleForApp('${c.job_title||''}','${jobId}')" style="padding:6px 9px" title="Schedule Interview">📅</button>
+        <button class="btn btn-ghost btn-sm"onclick="openScheduleForApp('${c.id}','${(c.full_name || '').replace(/'/g,"\\'")}','${(c.job_title || '').replace(/'/g,"\\'")}','${c.job_id}')"style="padding:6px 9px">📅</button>
         <select class="form-select" style="width:auto;padding:5px 10px;font-size:.72rem" onchange="moveCandidateStage('${jobId}',this.value,${!!c._fromSeeker})">
           ${['applied','screening','interview','offer','hired','rejected'].map(s => `<option ${c.stage===s?'selected':''}>${s}</option>`).join('')}
         </select>
@@ -1554,7 +1680,7 @@ function renderCandidateTable(cands, coverLetters={}) {
 
 async function moveCandidateStage(id, stage, isFromSeeker) {
   if (isFromSeeker) {
-    const apps = getSeekerApplications();
+    const apps = await getRecruiterApplications();
     const idx = apps.findIndex(a => String(a.job_id||a.id) === String(id));
     if (idx >= 0) { apps[idx].stage = stage; localStorage.setItem('tb_applications', JSON.stringify(apps)); }
   }
@@ -1578,27 +1704,7 @@ async function doExport() {
 /* ══════════════════════════════════════════════════════════════════════
    SEED DEMO EVENTS (if none exist, add some to show calendar off)
 ══════════════════════════════════════════════════════════════════════ */
-function seedDemoEvents() {
-  if (getEvents().length > 0) return; // already has events
-  const now = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  const dateStr = (daysOffset) => {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysOffset);
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  };
-  // Add a near-future event for demo notification (12 mins from now)
-  const soonDt = new Date(now.getTime() + 12 * 60 * 1000);
-  const soonTime = `${pad(soonDt.getHours())}:${pad(soonDt.getMinutes())}`;
 
-  const demoEvents = [
-    {id:`ev_demo1`,name:'Alex Rivera',role:'Frontend Engineer',  date:dateStr(0), time:soonTime,      type:'screening', duration:30, location:'Zoom · zoom.us/j/12345', notes:'Focus on React & TypeScript skills', remind:15, createdAt:new Date().toISOString()},
-    {id:`ev_demo2`,name:'Sam Chen',   role:'Product Designer',   date:dateStr(1), time:'10:00',        type:'interview', duration:60, location:'Google Meet', notes:'Portfolio review included', remind:15, createdAt:new Date().toISOString()},
-    {id:`ev_demo3`,name:'Maria Santos',role:'Data Analyst',      date:dateStr(2), time:'14:30',        type:'interview', duration:45, location:'Office - Room 3B', notes:'SQL + Python assessment', remind:30, createdAt:new Date().toISOString()},
-    {id:`ev_demo4`,name:'James Okafor',role:'Engineering Manager',date:dateStr(5),'time':'11:00',      type:'panel',     duration:90, location:'HQ Conference Room', notes:'Panel with CTO & Team Lead', remind:30, createdAt:new Date().toISOString()},
-    {id:`ev_demo5`,name:'Priya Mehta', role:'UX Researcher',     date:dateStr(7), time:'09:00',        type:'offer',     duration:30, location:'Zoom', notes:'Offer letter discussion', remind:10, createdAt:new Date().toISOString()},
-  ];
-  saveEvents(demoEvents);
-}
 
 /* ══════════════════════════════════════════════════════════════════════
    INIT
@@ -1606,7 +1712,6 @@ function seedDemoEvents() {
 const s = document.createElement('script');
 s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
 s.onload = () => {
-  seedDemoEvents();
   loadDashboard();
   scheduleAllExistingTimers();
 };

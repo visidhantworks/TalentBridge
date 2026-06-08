@@ -525,9 +525,24 @@
    GLOBALS
 ══════════════════════════════════════════════════════════════════════ */
 const API = 'http://127.0.0.1:8000';
-let token = localStorage.getItem('tb_access_token') || 'demo_token';
-localStorage.setItem('tb_access_token', token);
+const token = localStorage.getItem('tb_access_token');
 
+if (!token) {
+  window.location.href = 'login.html';
+  throw new Error('No auth token found');
+}
+
+try {
+  const payload = JSON.parse(atob(token.split('.')[1]));
+
+  if (payload.utype !== 'job_seeker') {
+    window.location.href = 'login.html';
+    throw new Error('Job seeker account required');
+  }
+} catch (err) {
+  window.location.href = 'login.html';
+  throw err;
+}
 let dashData = null;
 let applyingJobId = null, applyingJobTitle = '', applyingCompany = '', applyingLogo = '🏢';
 let currentView = 'dashboard';
@@ -549,22 +564,74 @@ document.getElementById('today-date').textContent = new Date().toLocaleDateStrin
    STORAGE HELPERS
 ══════════════════════════════════════════════════════════════════════ */
 // Recruiter-scheduled interviews (read from tb_interviews, same key as recruiter dashboard)
-function getRecruiterInterviews() {
-  try { return JSON.parse(localStorage.getItem('tb_interviews') || '[]'); } catch { return []; }
-}
+async function getSeekerInterviews() {
+  const r = await fetch(`${API}/seeker/interviews`, {
+    headers: authH()
+  });
 
-// Seeker notifications store
+  if (!r.ok) throw new Error();
+
+  const rows = await r.json();
+
+  return rows.map(i => ({
+    id: i.id,
+    date: i.interview_date,
+    time: i.interview_time,
+    type: i.interview_type,
+    name: i.full_name,
+    role: i.role,
+    company_name: i.company_name,
+    location: i.location,
+    status: i.status
+  }));
+}
+function getUserId() {
+  try {
+    const payload = JSON.parse(
+      atob(token.split('.')[1])
+    );
+    return payload.uid;
+  } catch {
+    return 'guest';
+  }
+}
 function getSeekerNotifs() {
-  try { return JSON.parse(localStorage.getItem('tb_seeker_notifs') || '[]'); } catch { return []; }
+  try {
+    return JSON.parse(
+      localStorage.getItem(
+        `tb_seeker_notifs_${getUserId()}`
+      ) || '[]'
+    );
+  } catch {
+    return [];
+  }
 }
-function saveSeekerNotifs(n) { localStorage.setItem('tb_seeker_notifs', JSON.stringify(n)); }
 
-// Track last-seen state of recruiter data (to detect changes)
+function saveSeekerNotifs(n) {
+  localStorage.setItem(
+    `tb_seeker_notifs_${getUserId()}`,
+    JSON.stringify(n)
+  );
+}
+
 function getLastSeenState() {
-  try { return JSON.parse(localStorage.getItem('tb_seeker_last_seen') || '{}'); } catch { return {}; }
+  try {
+    return JSON.parse(
+      localStorage.getItem(
+        `tb_seeker_last_seen_${getUserId()}`
+      ) || '{}'
+    );
+  } catch {
+    return {};
+  }
 }
-function saveLastSeenState(s) { localStorage.setItem('tb_seeker_last_seen', JSON.stringify(s)); }
 
+function saveLastSeenState(s) {
+  localStorage.setItem(
+    `tb_seeker_last_seen_${getUserId()}`,
+    JSON.stringify(s)
+  );
+}
 // Applications
 const DEMO_APPS = [
   { id:'app-1', job_id:101, job_title:'Senior React Developer', company_name:'Stripe',  company_logo:'💳', location:'Remote', stage:'interview', applied_at:'2025-02-14' },
@@ -573,11 +640,14 @@ const DEMO_APPS = [
   { id:'app-4', job_id:104, job_title:'Product Engineer',        company_name:'Figma',   company_logo:'🎨', location:'Remote', stage:'offer',     applied_at:'2025-02-08' },
   { id:'app-5', job_id:105, job_title:'Web Developer',           company_name:'Notion',  company_logo:'📝', location:'NYC',    stage:'rejected',  applied_at:'2025-02-05' },
 ];
-function getLocalApplications() {
-  const raw = localStorage.getItem('tb_applications');
-  if (raw) return JSON.parse(raw);
-  localStorage.setItem('tb_applications', JSON.stringify(DEMO_APPS));
-  return [...DEMO_APPS];
+async function getApplications() {
+  const r = await fetch(`${API}/seeker/applications`, {
+    headers: authH()
+  });
+
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+  return await r.json();
 }
 function saveLocalApplications(apps) { localStorage.setItem('tb_applications', JSON.stringify(apps)); }
 
@@ -684,17 +754,31 @@ function showView(view) {
    DASHBOARD
 ══════════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
-  let d;
   try {
-    const res = await fetch(`${API}/seeker/dashboard`,{headers:authH()});
-    if (res.ok) d = await res.json(); else throw new Error();
-  } catch { d = DEMO; }
-  d = {...d, stats:getLocalStats(), applications:getLocalApplications()};
-  dashData = d;
-  renderDashboard(d);
-}
+    const res = await fetch(`${API}/seeker/dashboard`, {
+      headers: authH()
+    });
 
-function renderDashboard(d) {
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const d = await res.json();
+
+    dashData = d;
+    renderDashboard(d);
+
+  } catch (err) {
+    console.error("Failed to load dashboard:", err);
+
+    document.getElementById('main-content').innerHTML = `
+      <div class="empty">
+        Failed to load dashboard data.
+      </div>
+    `;
+  }
+}
+async function renderDashboard(d) {
   const u=d.user,p=d.profile,st=d.stats;
   const initials=(u.name||'U').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   const sbWrap=document.getElementById('sb-avatar-wrap');
@@ -721,7 +805,7 @@ function renderDashboard(d) {
   const github=p.github_url?`<a href="${p.github_url}" target="_blank">⚙️ GitHub</a>`:'';
 
   // Upcoming interviews from recruiter calendar
-  const interviews = getRecruiterInterviews();
+  const interviews = await  getSeekerInterviews();
   const upcomingEvs = interviews.filter(e=>e.date>=todayStr()).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,2);
 
   const upcomingHtml = upcomingEvs.length ? upcomingEvs.map(ev=>{
@@ -859,7 +943,7 @@ function loadCalendarView() {
   renderCalendar();
 }
 
-function renderCalendar() {
+async function renderCalendar() {
   const now = new Date();
   const yr = calViewDate.getFullYear(), mo = calViewDate.getMonth();
   const lbl = document.getElementById('cal-month-label');
@@ -868,7 +952,7 @@ function renderCalendar() {
   const todayBig = document.getElementById('cal-today-big');
   if (todayBig) todayBig.textContent = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 
-  const eventsAll = getRecruiterInterviews();
+  const eventsAll = await getSeekerInterviews();
   const today = todayStr();
   const todayEvs = eventsAll.filter(e => e.date === today);
   const calTodaySub = document.getElementById('cal-today-sub');
@@ -918,16 +1002,16 @@ function renderCalendar() {
   renderUpcomingCalList();
 }
 
-function selectCalDay(dateStr) {
+async function selectCalDay(dateStr) {
   calSelectedDay = dateStr;
-  renderCalendar();
-  const evs = getRecruiterInterviews().filter(e => e.date === dateStr);
+  await renderCalendar();
+  const evs = (await getSeekerInterviews()).filter(e=>e.date ===datestr);
   if (evs.length === 1) openInterviewDetail(evs[0].id);
   else if (evs.length > 1) openInterviewDetail(evs[0].id); // open first
 }
 
-function renderUpcomingCalList() {
-  const evs = getRecruiterInterviews()
+async function renderUpcomingCalList() {
+  const evs = await (getSeekerInterviews())
     .filter(e => e.date >= todayStr())
     .sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time))
     .slice(0,6);
@@ -970,11 +1054,20 @@ function calToday() { calViewDate = new Date(); calSelectedDay = null; renderCal
 /* ══════════════════════════════════════════════════════════════════════
    INTERVIEW DETAIL MODAL (READ-ONLY)
 ══════════════════════════════════════════════════════════════════════ */
-function openInterviewDetail(evId) {
-  const ev = getRecruiterInterviews().find(e => e.id === evId);
-  if (!ev) { toast('Interview not found','error'); return; }
-  currentEventId = evId;
+async function openInterviewDetail(evId) {
+   const interviews = await getSeekerInterviews();
 
+  const ev = interviews.find(
+    e => String(e.id) === String(evId)
+  );
+
+  if (!ev) {
+    toast('Interview not found','error');
+    return;
+  }
+
+  currentEventId = evId;
+   
   const color = EV_COLOR[ev.type] || 'var(--blue)';
   const t12   = formatTime12(ev.time);
   const icon  = ev.type==='screening'?'🔍':ev.type==='offer'?'🎉':ev.type==='panel'?'👥':'🎙️';
@@ -1025,16 +1118,16 @@ function startPolling() {
   pollTimer = setInterval(checkForUpdates, 8000);
 }
 
-function checkForUpdates() {
-  checkNewInterviews();
+async function checkForUpdates() {
+  await checkNewInterviews();
   checkStageChanges();
   updateBellBadge();
-  updateCalNotifDot();
+  await updateCalNotifDot();
 }
 
 /* ── 1. NEW INTERVIEWS ──────────────────────────────────────────────── */
-function checkNewInterviews() {
-  const interviews = getRecruiterInterviews();
+async function checkNewInterviews() {
+  const interviews = await getSeekerInterviews();
   const lastSeen   = getLastSeenState();
   const seenIds    = new Set(lastSeen.interviewIds || []);
   const newEvs     = interviews.filter(e => !seenIds.has(e.id));
@@ -1073,8 +1166,8 @@ function checkNewInterviews() {
 }
 
 /* ── 2. STAGE CHANGES ───────────────────────────────────────────────── */
-function checkStageChanges() {
-  const apps     = getLocalApplications();
+async function checkStageChanges() {
+  const apps     = await getApplications();
   const lastSeen = getLastSeenState();
   const prevStages = lastSeen.appStages || {};
   let changed = false;
@@ -1185,8 +1278,9 @@ function dismissLiveNotif() {
   setTimeout(processNotifQueue, 500);
 }
 
-function viewFromLiveNotif() {
-  const ev = getRecruiterInterviews().find(e => e.id === liveNotifEventId);
+async function viewFromLiveNotif() {
+  const interviews = await getSeekerInterviews();
+  const ev =  interviews.find(e => e.id === liveNotifEventId);
   if (ev) openInterviewDetail(ev.id);
   else if (currentView !== 'applications') showView('applications');
   dismissLiveNotif();
@@ -1239,23 +1333,24 @@ function renderNotifPanel() {
   }).join('');
 }
 
-function markNotifRead(id) {
+async function markNotifRead(id) {
   const notifs = getSeekerNotifs();
-  const n = notifs.find(x => x.id === id);
+  const n = notifs.find(x => string(x.id) === string(id));
   if (n) { n.read = true; saveSeekerNotifs(notifs); renderNotifPanel(); updateBellBadge(); }
   // Navigate on click
   if (n && n.type === 'interview') {
-    const ev = getRecruiterInterviews().find(e => e.id === n.ref);
-    if (ev) { toggleNotifPanel(); openInterviewDetail(ev.id); }
+    const a = await getSeekerInterviews();
+    const ev = a.find(e => e.id === n.ref);
+    if (ev) { toggleNotifPanel(); await  openInterviewDetail(ev.id); }
   } else if (n) {
     toggleNotifPanel();
     showView('applications');
   }
 }
 
-function markAllNotifsRead() {
+async function markAllNotifsRead() {
   const notifs = getSeekerNotifs().map(n => ({...n,read:true}));
-  saveSeekerNotifs(notifs); renderNotifPanel(); updateBellBadge(); updateCalNotifDot();
+  saveSeekerNotifs(notifs); renderNotifPanel(); updateBellBadge(); await updateCalNotifDot();
   toast('All notifications marked as read');
 }
 
@@ -1267,13 +1362,23 @@ function updateBellBadge() {
   else badge.style.display = 'none';
 }
 
-function updateCalNotifDot() {
-  // Count upcoming interviews as "new" if recently added
-  const count = getRecruiterInterviews().filter(e => e.date >= todayStr()).length;
+async function updateCalNotifDot() {
+  const interviews = await getSeekerInterviews();
+
+  const count = interviews.filter(
+    e => e.date >= todayStr()
+  ).length;
+
   const dot = document.getElementById('cal-notif-dot');
+
   if (!dot) return;
-  if (count > 0) { dot.textContent = count; dot.style.display='inline'; }
-  else dot.style.display = 'none';
+
+  if (count > 0) {
+    dot.textContent = count;
+    dot.style.display = 'inline';
+  } else {
+    dot.style.display = 'none';
+  }
 }
 
 function getTimeAgo(isoStr) {
@@ -1289,8 +1394,8 @@ function getTimeAgo(isoStr) {
 /* ══════════════════════════════════════════════════════════════════════
    CHART
 ══════════════════════════════════════════════════════════════════════ */
-function deriveChartData() {
-  const apps = getLocalApplications();
+async function deriveChartData() {
+  const apps =  await getApplications();
   const now = new Date();
   const weekStarts = [];
   const cur = new Date(now); cur.setHours(0,0,0,0); cur.setDate(cur.getDate()-cur.getDay());
@@ -1309,7 +1414,7 @@ function deriveChartData() {
 }
 
 async function loadAndDrawChart(animate=false) {
-  const data = deriveChartData();
+  const data = await deriveChartData();
   drawActivityChart(data,animate);
   clearTimeout(chartPollTimer);
   chartPollTimer = setTimeout(()=>{if(currentView==='dashboard'&&document.getElementById('activity-chart'))loadAndDrawChart(false);},30000);
@@ -1383,7 +1488,8 @@ async function doSearch(){await fetchJobs(document.getElementById('job-search')?
 async function fetchJobs(q=''){
   const container=document.getElementById('jobs-list');if(!container)return;
   container.innerHTML='<div class="loading">Searching…</div>';
-  const appliedIds=getLocalApplications().map(a=>a.job_id);
+  const apps = await getApplications();
+  const appliedIds = apps.map(a => a.job_id);
   try{
     const res=await fetch(`${API}/seeker/jobs?q=${encodeURIComponent(q)}`,{headers:authH()});
     if(!res.ok)throw new Error();
@@ -1425,7 +1531,7 @@ function renderJobCard(j){
 ══════════════════════════════════════════════════════════════════════ */
 async function loadApplicationsView(){
   document.getElementById('main-content').innerHTML='<div class="loading">Loading applications…</div>';
-  const apps=getLocalApplications();
+  const apps= await getApplications();
   if(!apps.length){
     document.getElementById('main-content').innerHTML=`<div class="empty" style="margin-top:60px;font-size:.9rem">You haven't applied to any jobs yet.<br><br><button class="btn btn-primary" onclick="showView('jobs')" style="margin:0 auto">Browse Jobs →</button></div>`;
     return;
@@ -1471,34 +1577,51 @@ function openApply(jobId,jobTitle,companyName,logo){
 }
 
 async function submitApplication(){
-  if(!applyingJobId)return;
-  if(!selectedCoverFile){toast('⚠️ Please attach your cover letter','error');return;}
+  if(!applyingJobId) return;
+
+  if(!selectedCoverFile){
+    toast('⚠️ Please attach your cover letter','error');
+    return;
+  }
+
   const btn=document.getElementById('btn-apply-submit');
-  btn.disabled=true;btn.textContent='Submitting…';
-  const reader=new FileReader();
-  reader.onload=async(ev)=>{
-    const dataUrl=ev.target.result;
-    try{const fd=new FormData();fd.append('job_id',applyingJobId);fd.append('cover_letter',selectedCoverFile);await fetch(`${API}/seeker/apply`,{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd});}catch{}
-    const apps=getLocalApplications();
-    const already=apps.some(a=>String(a.job_id)===String(applyingJobId));
-    if(!already){
-      saveCoverLetter(applyingJobId,selectedCoverFile.name,dataUrl);
-      apps.unshift({id:`app-${Date.now()}`,job_id:applyingJobId,job_title:applyingJobTitle,company_name:applyingCompany,company_logo:applyingLogo,location:'',stage:'applied',applied_at:new Date().toISOString().split('T')[0]});
-      saveLocalApplications(apps);
-      const stats=getLocalStats();stats.total_applications+=1;stats.in_progress+=1;saveLocalStats(stats);
-      ['sc-apps','ph-total-apps'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=stats.total_applications;});
-      const prog=document.getElementById('sc-progress');if(prog)prog.textContent=stats.in_progress;
-      if(currentView==='dashboard')loadAndDrawChart(false);
-      toast(`✅ Applied to ${applyingCompany}!`);
-    }else{toast('You\'ve already applied to this role.','error');}
+  btn.disabled=true;
+  btn.textContent='Submitting…';
+
+  try{
+    const res = await fetch(`${API}/seeker/apply`,{
+      method:'POST',
+      headers: authH(),
+      body: JSON.stringify({
+        job_id: applyingJobId
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.text();
+      throw new Error(err);
+    }
+
+    toast(`✅ Applied to ${applyingCompany}!`);
+
     closeModal('modal-apply');
-    applyingJobId=null;applyingJobTitle='';applyingCompany='';applyingLogo='🏢';
-    btn.disabled=false;btn.textContent='🚀 Submit Application';
-    if(currentView==='dashboard')loadDashboard();
-    if(currentView==='jobs')loadJobsView();
-    if(currentView==='applications')loadApplicationsView();
-  };
-  reader.readAsDataURL(selectedCoverFile);
+
+    applyingJobId=null;
+    applyingJobTitle='';
+    applyingCompany='';
+    applyingLogo='🏢';
+
+    if(currentView==='dashboard') await loadDashboard();
+    if(currentView==='jobs') await loadJobsView();
+    if(currentView==='applications') await loadApplicationsView();
+
+  }catch(err){
+    console.error(err);
+    toast('Application failed','error');
+  }finally{
+    btn.disabled=false;
+    btn.textContent='🚀 Submit Application';
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1536,20 +1659,72 @@ function clearPhoto(){profilePhotoDataUrl=null;localStorage.removeItem('tb_profi
 ══════════════════════════════════════════════════════════════════════ */
 async function openEditProfile(){
   let data;
-  try{const r=await fetch(`${API}/seeker/profile`,{headers:authH()});if(r.ok)data=await r.json();else throw new Error();}
-  catch{data={user:DEMO.user,profile:DEMO.profile};}
-  const u=data.user||{},p=data.profile||{};
-  const map={'p-name':u.full_name||u.name||'','p-title':u.title||'','p-headline':p.headline||'','p-location':p.location||'','p-skills':p.skills||'','p-exp':p.experience_years||'','p-bio':p.bio||'','p-linkedin':p.linkedin_url||'','p-github':p.github_url||''};
-  Object.entries(map).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.value=val;});
-  const prev=document.getElementById('profile-photo-preview'),cb=document.getElementById('photo-clear-btn');
-  const initials=(u.full_name||u.name||'U').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  if(profilePhotoDataUrl){prev.innerHTML=`<img src="${profilePhotoDataUrl}" alt="preview"/>`;cb.style.display='inline';}
-  else{prev.innerHTML=`<span id="profile-photo-initials">${initials}</span>`;cb.style.display='none';}
-  openModal('modal-profile');
+
+  try{
+    const r = await fetch(`${API}/seeker/profile`, {
+      headers: authH()
+    });
+
+    if(!r.ok){
+      throw new Error(`HTTP ${r.status}`);
+    }
+
+    data = await r.json();
+  }
+  catch(err){
+  console.error('PROFILE FETCH FAILED');
+  console.error('URL:', `${API}/seeker/profile`);
+  console.error('TOKEN:', token);
+  console.error(err);
+  alert(err.message);
+  return;
 }
 
+  const u = data.user || {};
+  const p = data.profile || {};
+
+  const map = {
+    'p-name': u.full_name || u.name || '',
+    'p-title': u.title || '',
+    'p-headline': p.headline || '',
+    'p-location': p.location || '',
+    'p-skills': p.skills || '',
+    'p-exp': p.experience_years || '',
+    'p-bio': p.bio || '',
+    'p-linkedin': p.linkedin_url || '',
+    'p-github': p.github_url || ''
+  };
+
+  Object.entries(map).forEach(([id,val])=>{
+    const el = document.getElementById(id);
+    if(el) el.value = val;
+  });
+
+  const prev = document.getElementById('profile-photo-preview');
+  const cb = document.getElementById('photo-clear-btn');
+
+  const initials = (u.full_name || u.name || 'U')
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .slice(0,2)
+    .toUpperCase();
+
+  if(profilePhotoDataUrl){
+    prev.innerHTML = `<img src="${profilePhotoDataUrl}" alt="preview"/>`;
+    cb.style.display = 'inline';
+  }else{
+    prev.innerHTML = `<span id="profile-photo-initials">${initials}</span>`;
+    cb.style.display = 'none';
+  }
+
+  openModal('modal-profile');
+}
 async function saveProfile(){
-  try{const r=await fetch(`${API}/seeker/profile`,{method:'PUT',headers:authH(),body:JSON.stringify({full_name:document.getElementById('p-name').value,title:document.getElementById('p-title').value,headline:document.getElementById('p-headline').value,location:document.getElementById('p-location').value,skills:document.getElementById('p-skills').value,experience_years:parseInt(document.getElementById('p-exp').value)||null,bio:document.getElementById('p-bio').value,linkedin_url:document.getElementById('p-linkedin').value,github_url:document.getElementById('p-github').value,open_to_work:1})});if(!r.ok)throw new Error();}catch{}
+  console.log("Button Clicked!");
+  try{
+    console.log("SENDING PUT REQUEST!!");
+    const r=await fetch(`${API}/seeker/profile`,{method:'PUT',headers:authH(),body:JSON.stringify({full_name:document.getElementById('p-name').value,title:document.getElementById('p-title').value,headline:document.getElementById('p-headline').value,location:document.getElementById('p-location').value,skills:document.getElementById('p-skills').value,experience_years:parseInt(document.getElementById('p-exp').value)||null,bio:document.getElementById('p-bio').value,linkedin_url:document.getElementById('p-linkedin').value,github_url:document.getElementById('p-github').value,open_to_work:true})});if(!r.ok)throw new Error();}catch{}
   closeModal('modal-profile');toast('✅ Profile updated!');
   if(currentView==='dashboard')loadDashboard();
 }
@@ -1563,7 +1738,20 @@ function downloadCoverLetter(jobId,companyName,jobTitle){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   toast(`📥 Downloading — "${a.download}"`);
 }
+function updateBellBadge() {
+  const count = getSeekerNotifs().filter(n => !n.read).length;
 
+  const badge = document.getElementById('bell-badge');
+
+  if (!badge) return;
+
+  if (count > 0) {
+    badge.textContent = Math.min(count, 9);
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
 /* ══════════════════════════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════════════════════════ */
