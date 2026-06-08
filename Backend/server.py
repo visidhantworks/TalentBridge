@@ -86,6 +86,162 @@ def fmt_sal(mn, mx):
     return None
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    def route_recruiter_interviews(self, qs):
+        claims = get_auth_user(self)
+
+        if not claims or claims.get('utype') != 'recruiter':
+            return self.send_error_json('Recruiter access required', 403)
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                i.*,
+                c.full_name,
+                j.title AS role
+            FROM interviews i
+            LEFT JOIN candidates c
+                ON i.candidate_id = c.id
+            LEFT JOIN jobs j
+                ON i.job_id = j.id
+            WHERE i.company_id = %s
+            ORDER BY i.interview_date, i.interview_time
+        """, (claims['cid'],))
+
+        rows = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        self.send_json(rows)
+    def route_recruiter_interviews_create(self, qs):
+        claims = get_auth_user(self)
+
+        if not claims or claims.get('utype') != 'recruiter':
+            return self.send_error_json('Recruiter access required', 403)
+
+        body = self.read_body()
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO interviews (
+                company_id,
+                candidate_id,
+                job_id,
+                scheduled_by,
+                title,
+                interview_type,
+                interview_date,
+                interview_time,
+                duration_minutes,
+                meeting_link,
+                location,
+                notes
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING id
+        """, (
+            (
+            claims['cid'],
+            body.get('candidate_id'),
+            body.get('job_id'),
+            claims['uid'],
+            body.get('title', 'Interview'),
+            body.get('interview_type', 'interview'),
+            body.get('interview_date'),
+            body.get('interview_time'),
+            body.get('duration_minutes', 60),
+            body.get('meeting_link'),
+            body.get('location'),
+            body.get('notes')
+        )
+        ))
+
+        iid = cur.fetchone()['id']
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        self.send_json({
+            'id': iid,
+            'message': 'Interview scheduled'
+        }, 201)
+    def route_recruiter_interviews_delete(self, qs):
+        claims = get_auth_user(self)
+
+        if not claims or claims.get('utype') != 'recruiter':
+            return self.send_error_json('Recruiter access required', 403)
+
+        body = self.read_body()
+        interview_id = body.get('id')
+
+        if not interview_id:
+            return self.send_error_json('Interview id required', 400)
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            DELETE FROM interviews
+            WHERE id = %s
+            AND company_id = %s
+            RETURNING id
+        """, (interview_id, claims['cid']))
+
+        deleted = cur.fetchone()
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        if not deleted:
+            return self.send_error_json('Interview not found', 404)
+
+        self.send_json({
+            'message': 'Interview deleted'
+        })
+    def route_seeker_interviews(self, qs):
+        claims = get_auth_user(self)
+
+        if not claims:
+            return self.send_error_json('Unauthorized', 401)
+
+        uid = claims['uid']
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                i.*,
+                c.full_name,
+                j.title AS role,
+                co.name AS company_name
+            FROM interviews i
+            JOIN candidates c
+                ON i.candidate_id = c.id
+            LEFT JOIN jobs j
+                ON c.job_id = j.id
+            LEFT JOIN companies co
+                ON i.company_id = co.id
+            WHERE c.user_id = %s
+            ORDER BY i.interview_date, i.interview_time
+        """, (uid,))
+
+        rows = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        self.send_json(rows)
     def route_dashboard(self, qs):
         claims = get_auth_user(self)
 
@@ -303,6 +459,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ('GET', '/seeker/applications'):  self.route_seeker_applications,
             ('GET', '/seeker/profile'):       self.route_seeker_profile,
             ('PUT', '/seeker/profile'):       self.route_seeker_profile_update,
+            ('GET',  '/recruiter/interviews'): self.route_recruiter_interviews,
+            ('POST', '/recruiter/interviews'): self.route_recruiter_interviews_create,
+            ('GET',  '/seeker/interviews'): self.route_seeker_interviews,
+            ('DELETE' , '/recruiter/interviews') : self.route_recruiter_interviews_delete
         }
         fn = routes.get((method, path))
         if fn: fn(qs)
@@ -923,7 +1083,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def route_candidates_update(self, qs):
         claims = get_auth_user(self)
-
+        print(claims)
         if not claims or claims.get('utype') != 'recruiter':
             return self.send_error_json('Recruiter access required', 403)
 
@@ -959,7 +1119,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             nr = cur.fetchone()
             nm = nr['full_name'] if nr else 'Candidate'
-
+            print("Before Activity Log")
+            print("CLAIMS:", claims)
+            print("CID:", claims.get('cid'))
+            print("UID:", claims.get('uid'))
             cur.execute("""
                 INSERT INTO activity_log (
                     company_id,
@@ -982,6 +1145,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cid2,
                 f"{nm} moved to {body['stage']}"
             ))
+        print("AFTER ACRTIVITY LOG")
 
         conn.commit()
 
@@ -1041,30 +1205,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cur.execute("""
             SELECT
                 TO_CHAR(updated_at, 'YYYY-MM') AS month,
-                COUNT(*) AS count
+                COUNT(*) AS applications,
+                COUNT(*) FILTER (WHERE stage = 'hired') AS hired
             FROM candidates
             WHERE company_id = %s
-            AND stage = 'hired'
             AND updated_at >= NOW() - (%s * INTERVAL '1 month')
             GROUP BY month
-            ORDER BY month ASC
-        """, (
+            ORDER BY month
+            """, (
             claims['cid'],
             months
-        ))
+            ))
 
+        
         rows = cur.fetchall()
 
-        cur.close()
-        conn.close()
+        apps_map = {}
+        hired_map = {}
 
-        result = {
-            r['month']: r['count']
-            for r in rows
-        }
+        for r in rows:
+            apps_map[r['month']] = r['applications']
+            hired_map[r['month']] = r['hired']
 
         labels = []
         data = []
+        applications = []
 
         now = datetime.utcnow()
 
@@ -1077,16 +1242,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 else d.strftime("%b '%y")
             )
 
+            month_key = d.strftime('%Y-%m')
+
             data.append(
-                result.get(
-                    d.strftime('%Y-%m'),
-                    0
-                )
+                hired_map.get(month_key, 0)
+            )
+
+            applications.append(
+                apps_map.get(month_key, 0)
             )
 
         self.send_json({
             'labels': labels,
-            'data': data
+            'data': data,
+            'applications' : applications
         })
 
     # ── EXPORT ──────────────────────────────────────────────────────────
@@ -1306,7 +1475,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # ── JOB SEEKER ───────────────────────────────────────────────────────
     def route_seeker_dashboard(self, qs):
+        
         claims = get_auth_user(self)
+        print("seeker claims:",claims)
         if not claims:
                 return self.send_error_json('Unauthorized', 401)
 
@@ -1323,12 +1494,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             (uid,)
         )
         user = cur.fetchone()
+        print("USER FROM DB:", user)
+ 
 
         cur.execute(
             "SELECT * FROM job_seeker_profiles WHERE user_id = %s",
             (uid,)
         )
         profile = cur.fetchone()
+        print("PROFILE FROM DB:", profile)
 
         cur.execute("""
             SELECT
@@ -1678,86 +1852,111 @@ class Handler(http.server.BaseHTTPRequestHandler):
     ])
     def route_seeker_profile(self, qs):
         claims = get_auth_user(self)
+
         if not claims:
             return self.send_error_json('Unauthorized', 401)
 
         conn = get_db()
         cur = conn.cursor()
+
         cur.execute(
             "SELECT * FROM users WHERE id = %s",
             (claims['uid'],)
-            )
+        )
+        user = cur.fetchone()
+
+        cur.execute(
+            """
+            SELECT *
+            FROM job_seeker_profiles
+            WHERE user_id = %s
+            """,
+            (claims['uid'],)
+        )
+        profile = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        self.send_json({
+            'user': user,
+            'profile': profile
+        })
    
     def route_seeker_profile_update(self, qs):
         claims = get_auth_user(self)
         if not claims:
             return self.send_error_json('Unauthorized', 401)
+    
 
         body = self.read_body()
+        print("PROFILE UPDATE BODY", body)
         conn = get_db()
         cur = conn.cursor()
-        if body.get('full_name') or body.get('title'):
-            cur.execute("""
-                        UPDATE users
-                        SET
-                        full_name = COALESCE(%s, full_name),
-                        title = COALESCE(%s, title)
-                        WHERE id = %s
-                        """, (
-                            body.get('full_name'),
-                            body.get('title'),
-                            claims['uid']
-                            ))
+        open_to_work = body.get('open_to_work', True)
 
-            cur.execute("""
-                        INSERT INTO job_seeker_profiles (
-                        user_id,
-                        headline,
-                        bio,
-                        skills,
-                        location,
-                        linkedin_url,
-                        github_url,
-                        portfolio_url,
-                        experience_years,
-                        open_to_work,
-                        updated_at
-                        )
-                        VALUES (
-                                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()
-                                 )
-                        ON CONFLICT (user_id)
-                        DO UPDATE SET
-                        headline = COALESCE(EXCLUDED.headline, job_seeker_profiles.headline),
-                        bio = COALESCE(EXCLUDED.bio, job_seeker_profiles.bio),
-                        skills = COALESCE(EXCLUDED.skills, job_seeker_profiles.skills),
-                        location = COALESCE(EXCLUDED.location, job_seeker_profiles.location),
-                        linkedin_url = COALESCE(EXCLUDED.linkedin_url, job_seeker_profiles.linkedin_url),
-                        github_url = COALESCE(EXCLUDED.github_url, job_seeker_profiles.github_url),
-                        portfolio_url = COALESCE(EXCLUDED.portfolio_url, job_seeker_profiles.portfolio_url),
-                        experience_years = COALESCE(EXCLUDED.experience_years, job_seeker_profiles.experience_years),
-                        open_to_work = COALESCE(EXCLUDED.open_to_work, job_seeker_profiles.open_to_work),
-                        updated_at = NOW()
-                        """, (
-                            claims['uid'],
-                            body.get('headline'),
-                            body.get('bio'),
-                            body.get('skills'),
-                            body.get('location'),
-                            body.get('linkedin_url'),
-                            body.get('github_url'),
-                            body.get('portfolio_url'),
-                            body.get('experience_years'),
-                            body.get('open_to_work', True)
-                            ))
+        if isinstance(open_to_work, int):
+            open_to_work = bool(open_to_work)
+        cur.execute("""
+                    UPDATE users
+                    SET
+                    full_name = COALESCE(%s, full_name),
+                    title = COALESCE(%s, title)
+                    WHERE id = %s
+                    """, (
+                        body.get('full_name'),
+                        body.get('title'),
+                        claims['uid']
+                        ))
 
-            conn.commit()
-            cur.close()
-            conn.close()
+        cur.execute("""
+                    INSERT INTO job_seeker_profiles (
+                    user_id,
+                    headline,
+                    bio,
+                    skills,
+                    location,
+                    linkedin_url,
+                    github_url,
+                    portfolio_url,
+                    experience_years,
+                    open_to_work,
+                    updated_at
+                    )
+                    VALUES (
+                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()
+                                )
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET
+                    headline = COALESCE(EXCLUDED.headline, job_seeker_profiles.headline),
+                    bio = COALESCE(EXCLUDED.bio, job_seeker_profiles.bio),
+                    skills = COALESCE(EXCLUDED.skills, job_seeker_profiles.skills),
+                    location = COALESCE(EXCLUDED.location, job_seeker_profiles.location),
+                    linkedin_url = COALESCE(EXCLUDED.linkedin_url, job_seeker_profiles.linkedin_url),
+                    github_url = COALESCE(EXCLUDED.github_url, job_seeker_profiles.github_url),
+                    portfolio_url = COALESCE(EXCLUDED.portfolio_url, job_seeker_profiles.portfolio_url),
+                    experience_years = COALESCE(EXCLUDED.experience_years, job_seeker_profiles.experience_years),
+                    open_to_work = COALESCE(EXCLUDED.open_to_work, job_seeker_profiles.open_to_work),
+                    updated_at = NOW()
+                    """, (
+                        claims['uid'],
+                        body.get('headline'),
+                        body.get('bio'),
+                        body.get('skills'),
+                        body.get('location'),
+                        body.get('linkedin_url'),
+                        body.get('github_url'),
+                        body.get('portfolio_url'),
+                        body.get('experience_years'),
+                        open_to_work
+                        ))
+        conn.commit()
+        cur.close()
+        conn.close()
 
-            self.send_json({
+        return self.send_json({
             'message': 'Profile updated'
-            })
+        })
 
     def fetch_one(query, params=None):
         conn = get_db()
