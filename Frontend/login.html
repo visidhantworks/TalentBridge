@@ -145,11 +145,28 @@
     @keyframes spin { to { transform:rotate(360deg); } }
     @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
     @media(max-width:800px) { .left-panel{display:none} .right-panel{padding:24px 20px} }
+    .server-notice{
+      margin: 14px 0 18px;
+      padding: 12px 14px;
+
+      background: rgba(232, 191, 104, 0.12);
+      border: 1px solid rgba(232, 191, 104, 0.35);
+
+      border-radius: 12px;
+
+      color: #d4b16a;
+
+      font-size: 0.82rem;
+      line-height: 1.45;
+      font-weight: 500;
+
+      backdrop-filter: blur(10px);
+    }
   </style>
 </head>
 <body>
 <div class="page">
-
+   
   <!-- LEFT HERO -->
   <div class="left-panel">
     <div class="brand">
@@ -205,7 +222,10 @@
       <div class="success-box" id="ok-msg"></div>
 
       <!-- ── SIGN IN FORM ── -->
-      <div class="form-section visible" id="form-login">
+       <div id="server-notice" class="server-notice">
+      ⚡ Demo Notice: The backend runs on Render's free tier and will take up to 60 seconds to wake up after inactivity.
+      </div>
+          <div class="form-section visible" id="form-login">
         <div class="field">
           <label>Email Address</label>
           <input type="email" id="l-email" placeholder="your@email.com" autocomplete="email"/>
