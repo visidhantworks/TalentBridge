@@ -463,7 +463,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ('GET',  '/recruiter/interviews'): self.route_recruiter_interviews,
             ('POST', '/recruiter/interviews'): self.route_recruiter_interviews_create,
             ('GET',  '/seeker/interviews'): self.route_seeker_interviews,
-            ('DELETE' , '/recruiter/interviews') : self.route_recruiter_interviews_delete
+            ('DELETE' , '/recruiter/interviews') : self.route_recruiter_interviews_delete,
+            ('GET', '/ping'): self.route_ping
         }
         fn = routes.get((method, path))
         if fn: fn(qs)
@@ -475,6 +476,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self): self.dispatch('DELETE')
 
     # ── AUTH ──────────────────────────────────────────────────────────────
+    def route_ping(self, qs):
+        self.send_json({"status": "ok"})
     def route_login(self, qs):
         body      = self.read_body()
         email     = body.get('email','').strip().lower()

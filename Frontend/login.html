@@ -330,7 +330,7 @@ let companyMode    = 'new';       // 'new' | 'join'
 let selectedCompanyId = null;
 let companySearchTimer;
 window.addEventListener('load', () => {
-  fetch('https://talentbridge-backend-8nia.onrender.com/jobs')
+  fetch('https://talentbridge-backend-8nia.onrender.com/ping')
     .catch(() => {});
 });
 // Redirect if already logged in
