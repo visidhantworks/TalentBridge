@@ -8,7 +8,7 @@ import io
 import csv
 import os
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta , timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timezone
@@ -20,6 +20,7 @@ load_dotenv()
 PORT = int(os.getenv("PORT", 8000))
 SECRET_KEY = os.getenv("SECRET_KEY")
 TOKEN_TTL = 86400
+RECRUITER_ACCESS_REQUIRED = "Recruiter access required"
 def get_db():
     return psycopg2.connect(
         host=os.getenv("DB_HOST"),
@@ -45,14 +46,25 @@ def create_token(user_id, company_id, user_type):
 def verify_token(token):
     try:
         header, payload, sig = token.split('.')
-        expected = _b64(hmac.new(SECRET_KEY.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest())
+        expected = _b64(
+            hmac.new(
+                SECRET_KEY.encode(),
+                f"{header}.{payload}".encode(),
+                hashlib.sha256
+            ).digest()
+        )
+
         if not hmac.compare_digest(sig, expected):
             return None
+
         data = json.loads(_unb64(payload))
+
         if data['exp'] < time.time():
             return None
+
         return data
-    except:
+
+    except (ValueError, KeyError, json.JSONDecodeError):
         return None
 
 def hash_pw(pw):
@@ -84,7 +96,7 @@ def time_ago(dt_val):
 
         return dt.strftime('%b %d')
 
-    except Exception:
+    except  (TypeError,ValueError):
         return str(dt_val)
 def fmt_sal(mn, mx):
     if mn and mx: return f"${mn//1000}k–${mx//1000}k"
@@ -95,7 +107,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         conn = get_db()
         cur = conn.cursor()
@@ -124,7 +136,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
 
@@ -151,7 +163,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
             RETURNING id
         """, (
-            (
             claims['cid'],
             body.get('candidate_id'),
             body.get('job_id'),
@@ -164,9 +175,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body.get('meeting_link'),
             body.get('location'),
             body.get('notes')
-        )
         ))
-
         iid = cur.fetchone()['id']
 
         conn.commit()
@@ -182,7 +191,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json (RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
         interview_id = body.get('id')
@@ -254,7 +263,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_error_json('Unauthorized', 401)
 
         if claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         cid = claims['cid']
         uid = claims['uid']
@@ -409,7 +418,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ]
         })
     def log_message(self, fmt, *args):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {fmt % args}")
+        timestamp = datetime.now().strftime('%H:%M:%S')
+
+        safe_fmt = str(fmt).replace('\n', '\\n').replace('\r', '\\r')
+        safe_args = tuple(
+            str(arg).replace('\n', '\\n').replace('\r', '\\r')
+            for arg in args
+        )
+
+        print(f"[{timestamp}] {safe_fmt % safe_args}")
 
     def send_json(self, data, status=200):
         body = json.dumps(data, default=str).encode()
@@ -435,8 +452,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         if not length: return {}
         try:   return json.loads(self.rfile.read(length))
-        except: return {}
-
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
     def dispatch(self, method):
         parsed = urlparse(self.path)
         path   = parsed.path.rstrip('/')
@@ -810,7 +827,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
 
@@ -891,7 +908,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json (RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
         jid = body.get('id')
@@ -941,7 +958,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json( RECRUITER_ACCESS_REQUIRED, 403)
 
         jid = qs.get('id', [None])[0]
 
@@ -974,7 +991,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json (RECRUITER_ACCESS_REQUIRED, 403)
 
         job_id = qs.get('job_id', [None])[0]
 
@@ -1021,7 +1038,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json (RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
 
@@ -1093,7 +1110,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
         print(claims)
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
         cid2 = body.get('id')
@@ -1239,7 +1256,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         data = []
         applications = []
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for i in range(months - 1, -1, -1):
             d = now.replace(day=1) - timedelta(days=i * 28)
@@ -1271,7 +1288,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         cid = claims['cid']
 
@@ -1338,7 +1355,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         w.writerow(['=== TALENTBRIDGE HIRING REPORT ==='])
         w.writerow([
             f'Company: {company["name"]}',
-            f'Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}'
+            f'Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}'
         ])
 
         w.writerow([])
@@ -1398,7 +1415,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         filename = (
             f"talentbridge_report_"
-            f"{datetime.utcnow().strftime('%Y%m%d')}.csv"
+            f"{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
         )
 
         self.send_response(200)
@@ -1444,7 +1461,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         claims = get_auth_user(self)
 
         if not claims or claims.get('utype') != 'recruiter':
-            return self.send_error_json('Recruiter access required', 403)
+            return self.send_error_json(RECRUITER_ACCESS_REQUIRED, 403)
 
         body = self.read_body()
 
