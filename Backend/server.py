@@ -12,9 +12,13 @@ from datetime import datetime, timedelta
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+ 
+
+load_dotenv()
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 PORT = int(os.getenv("PORT", 8000))
-SECRET_KEY = "talentbridge-super-secret-2025"
+SECRET_KEY = os.getenv("SECRET_KEY")
 TOKEN_TTL = 86400
 def get_db():
     return psycopg2.connect(
