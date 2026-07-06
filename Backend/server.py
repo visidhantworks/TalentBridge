@@ -418,16 +418,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 for a in activity
             ]
         })
-    def log_message(self, fmt, *args):
-        timestamp = datetime.now().strftime('%H:%M:%S')
-
-        safe_fmt = str(fmt).replace('\n', '\\n').replace('\r', '\\r')
-        safe_args = tuple(
-            str(arg).replace('\n', '\\n').replace('\r', '\\r')
-            for arg in args
-        )
-
-        print(f"[{timestamp}] {safe_fmt % safe_args}")
+    def log_message(self, format, *args):
+     from datetime import datetime
+     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+     try:
+         message = format % args
+     except Exception:
+          message = f"{format} {' '.join(map(str, args))}"
+     print(f"[{timestamp}] {message}")
     def send_json(self, data, status=200):
         body = json.dumps(data, default=str).encode("utf-8")
 
