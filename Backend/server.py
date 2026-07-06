@@ -28,6 +28,7 @@ def get_db():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         port=os.getenv("DB_PORT"),
+        sslmode = "require",
         cursor_factory=RealDictCursor
     )
 def _b64(data):
@@ -427,16 +428,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         )
 
         print(f"[{timestamp}] {safe_fmt % safe_args}")
-
     def send_json(self, data, status=200):
-        body = json.dumps(data, default=str).encode()
+        body = json.dumps(data, default=str).encode("utf-8")
+
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', len(body))
+
+        self.send_header(
+            "Content-Type",
+            "application/json; charset=utf-8"
+        )
+
+        self.send_header(
+            "X-Content-Type-Options",
+            "nosniff"
+        )
+
+        self.send_header(
+            "Content-Length",
+            str(len(body))
+        )
+
         self._cors()
         self.end_headers()
         self.wfile.write(body)
-
     def send_error_json(self, msg, status=400):
         self.send_json({'error': msg}, status)
 
@@ -1982,7 +1996,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send_json({
             'message': 'Profile updated'
         })
-
+    @staticmethod
     def fetch_one(query, params=None):
         conn = get_db()
         cur = conn.cursor()
@@ -1993,6 +2007,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cur.close()
         conn.close()
         return row
+    @staticmethod
     def fetch_all(query, params=None):
         conn = get_db()
         cur = conn.cursor()
@@ -2001,6 +2016,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cur.close()
         conn.close()
         return rows
+    @staticmethod
     def execute_query(query, params=None):
         conn = get_db()
         cur = conn.cursor()
